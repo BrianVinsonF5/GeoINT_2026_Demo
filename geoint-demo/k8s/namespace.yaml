@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: geoint-demo
+  labels:
+    app.kubernetes.io/name: geoint-demo
+    app.kubernetes.io/part-of: geoint-platform

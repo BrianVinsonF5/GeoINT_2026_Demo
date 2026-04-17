@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: geoserver-init
+  namespace: geoint-demo
+  labels:
+    app: geoserver
+data:
+  init-geoserver.sh: |
+    #!/usr/bin/env sh
+    set -eu
+
+    GEOSERVER_URL="http://geoserver-service:8080/geoserver"
+    AUTH="${GEOSERVER_ADMIN_USER}:${GEOSERVER_ADMIN_PASSWORD}"
+
+    echo "[geoserver-init] Waiting for GeoServer to become healthy..."
+    for i in $(seq 1 120); do
+      if curl -fsS "${GEOSERVER_URL}/web/" >/dev/null 2>&1; then
+        echo "[geoserver-init] GeoServer is reachable"
+        break
+      fi
+      sleep 5
+    done
+
+    echo "[geoserver-init] Creating workspace geoint"
+    curl -fsS -u "$AUTH" -XPOST -H 'Content-Type: text/xml' \
+      -d '<workspace><name>geoint</name></workspace>' \
+      "${GEOSERVER_URL}/rest/workspaces" || true
+
+    echo "[geoserver-init] Creating PostGIS datastore"
+    curl -fsS -u "$AUTH" -XPOST -H 'Content-Type: application/json' \
+      -d "{\"dataStore\":{\"name\":\"geoint_postgis\",\"connectionParameters\":{\"host\":\"postgis-service\",\"port\":\"5432\",\"database\":\"geoint_db\",\"schema\":\"geoint_data\",\"user\":\"${POSTGRES_USER}\",\"passwd\":\"${POSTGRES_PASSWORD}\",\"dbtype\":\"postgis\",\"Expose primary keys\":\"true\",\"validate connections\":\"true\",\"max connections\":\"20\"}}}" \
+      "${GEOSERVER_URL}/rest/workspaces/geoint/datastores" || true
+
+    publish_layer() {
+      LAYER_NAME="$1"
+      STYLE_NAME="$2"
+
+      echo "[geoserver-init] Publishing feature type: ${LAYER_NAME}"
+      curl -fsS -u "$AUTH" -XPOST -H 'Content-Type: application/json' \
+        -d "{\"featureType\":{\"name\":\"${LAYER_NAME}\",\"nativeName\":\"${LAYER_NAME}\",\"title\":\"${LAYER_NAME}\"}}" \
+        "${GEOSERVER_URL}/rest/workspaces/geoint/datastores/geoint_postgis/featuretypes" || true
+
+      echo "[geoserver-init] Applying default style ${STYLE_NAME} to ${LAYER_NAME}"
+      curl -fsS -u "$AUTH" -XPUT -H 'Content-Type: application/json' \
+        -d "{\"layer\":{\"defaultStyle\":{\"name\":\"${STYLE_NAME}\"}}}" \
+        "${GEOSERVER_URL}/rest/layers/geoint:${LAYER_NAME}" || true
+    }
+
+    publish_layer "military_installations" "point"
+    publish_layer "satellite_imagery_catalog" "polygon"
+    publish_layer "geoint_reports" "polygon"
+
+    echo "[geoserver-init] GeoServer configuration complete"

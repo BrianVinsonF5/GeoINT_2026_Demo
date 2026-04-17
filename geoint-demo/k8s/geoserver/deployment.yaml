@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: geoserver
+  namespace: geoint-demo
+  labels:
+    app: geoserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: geoserver
+  template:
+    metadata:
+      labels:
+        app: geoserver
+    spec:
+      containers:
+        - name: geoserver
+          image: kartoza/geoserver:2.25.2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: GEOSERVER_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: geoserver-secret
+                  key: GEOSERVER_ADMIN_USER
+            - name: GEOSERVER_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: geoserver-secret
+                  key: GEOSERVER_ADMIN_PASSWORD
+            - name: STABLE_EXTENSIONS
+              value: "ogcapi-features-plugin,ogcapi-maps-plugin"
+            - name: GEOSERVER_CSRF_DISABLED
+              value: "true"
+          volumeMounts:
+            - name: geoserver-data
+              mountPath: /opt/geoserver/data_dir
+          readinessProbe:
+            httpGet:
+              path: /geoserver/web/
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 8
+          livenessProbe:
+            httpGet:
+              path: /geoserver/web/
+              port: 8080
+            initialDelaySeconds: 90
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
+      volumes:
+        - name: geoserver-data
+          persistentVolumeClaim:
+            claimName: geoserver-data-pvc

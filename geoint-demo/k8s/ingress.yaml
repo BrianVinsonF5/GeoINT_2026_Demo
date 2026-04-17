@@ -1,0 +1,43 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: geoint-demo-ingress
+  namespace: geoint-demo
+  labels:
+    app.kubernetes.io/name: geoint-demo
+    app.kubernetes.io/component: ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    # F5 BIG-IP / NGINX Ingress integration placeholders:
+    # f5.com/virtual-server-ip: "10.10.10.100"
+    # f5.com/partition: "geoint"
+    # f5.com/waf-policy: "/Common/geoint-waf-policy"
+    # f5.com/api-security-policy: "/Common/geoint-api-policy"
+    # f5.com/ai-gateway-policy: "/Common/geoint-ai-guardrails"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: geoint-demo.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-service
+                port:
+                  number: 80
+          - path: /geoserver
+            pathType: Prefix
+            backend:
+              service:
+                name: geoserver-service
+                port:
+                  number: 8080
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: rag-api-service
+                port:
+                  number: 8000
