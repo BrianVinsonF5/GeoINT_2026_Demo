@@ -140,7 +140,7 @@ kubectl -n geoint-demo get ingress internal-registry-ingress
 
 Use your ingress controller address with this host header / DNS name:
 
-registry.geoint-demo.local:443
+```text
 registry.geoint-demo.local:443
 ```
 
