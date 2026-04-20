@@ -10,8 +10,10 @@ usage() {
 Usage: ./deploy.sh [options]
 
 Options:
-  --registry-host <host:port>  Registry endpoint reachable by cluster nodes.
-                               Example: 192.168.1.50:32000
+  --registry-host <host:port>  Registry endpoint reachable by BOTH:
+                               1) your external build workstation (push)
+                               2) cluster nodes (pull)
+                               Example: 10.20.30.40:5000
                                When set, app deployments use:
                                <host:port>/geoint-frontend:1.0.0
                                <host:port>/geoint-rag-api:1.0.0
@@ -60,10 +62,24 @@ kubectl apply -f k8s/registry/deployment.yaml
 kubectl apply -f k8s/registry/service.yaml
 kubectl -n "$NAMESPACE" rollout status deployment/internal-registry --timeout=300s
 
+REGISTRY_LB_IP="$(kubectl -n "$NAMESPACE" get svc internal-registry-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
+REGISTRY_LB_DNS="$(kubectl -n "$NAMESPACE" get svc internal-registry-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
+REGISTRY_EXTERNAL_HINT="<EXTERNAL_LB_IP_OR_DNS>:5000"
+
+if [[ -n "$REGISTRY_LB_IP" ]]; then
+  REGISTRY_EXTERNAL_HINT="${REGISTRY_LB_IP}:5000"
+elif [[ -n "$REGISTRY_LB_DNS" ]]; then
+  REGISTRY_EXTERNAL_HINT="${REGISTRY_LB_DNS}:5000"
+fi
+
 if [[ "$REGISTRY_ONLY" == "true" ]]; then
   echo ""
   echo "Internal registry is ready."
-  echo "Use kubectl -n $NAMESPACE get svc internal-registry-service to get endpoint details."
+  echo "Registry service details:"
+  kubectl -n "$NAMESPACE" get svc internal-registry-service
+  echo ""
+  echo "Preferred external endpoint (LoadBalancer): ${REGISTRY_EXTERNAL_HINT}"
+  echo "Fallback endpoint (NodePort): <NODE_IP>:32000"
   echo "Then build/tag/push images and rerun ./deploy.sh --registry-host <host:port>."
   exit 0
 fi
@@ -132,15 +148,17 @@ echo "2) Open:"
 echo "   http://${INGRESS_HOST}/"
 echo "   http://${INGRESS_HOST}/geoserver/web/"
 echo "   http://${INGRESS_HOST}/api/health"
-
-echo "Internal registry NodePort service:"
+echo ""
+echo "Internal registry service:"
 echo "   kubectl -n ${NAMESPACE} get svc internal-registry-service"
+echo "   Preferred external endpoint: ${REGISTRY_EXTERNAL_HINT}"
+echo "   Fallback endpoint: <NODE_IP>:32000"
 echo ""
 if [[ -n "$REGISTRY_HOST" ]]; then
   echo "Custom app images deployed from: ${REGISTRY_HOST}"
 else
   echo "Tip: set --registry-host to deploy app images from internal registry."
-  echo "Example: ./deploy.sh --registry-host <NODE_IP>:32000"
+  echo "Example: ./deploy.sh --registry-host <EXTERNAL_LB_IP_OR_DNS>:5000"
 fi
 
 echo ""

@@ -116,10 +116,11 @@ Optional (for GPU acceleration):
 ## 4) Internal Docker Registry + Image Push/Pull
 
 This repo now includes an internal registry deployment (`registry:2`) in the
-`geoint-demo` namespace:
+`geoint-demo` namespace and exposes it for external workstations:
 
 - Deployment: `k8s/registry/deployment.yaml`
-- Service: `k8s/registry/service.yaml` (NodePort `32000`)
+- Service: `k8s/registry/service.yaml` (`LoadBalancer` on port `5000`, with
+  NodePort fallback `32000`)
 - Storage: `k8s/registry/pvc.yaml`
 
 ### 4.1 Deploy only the internal registry first
@@ -129,13 +130,20 @@ chmod +x deploy.sh
 ./deploy.sh --registry-only
 ```
 
-Find a reachable endpoint for cluster nodes/workstations:
+Find a reachable endpoint from your **external build workstation** and from
+**cluster nodes**:
 
 ```bash
 kubectl -n geoint-demo get svc internal-registry-service -o wide
 ```
 
-Example registry endpoint (replace with your real node IP/hostname):
+Preferred endpoint (external LB):
+
+```text
+<EXTERNAL_LB_IP_OR_DNS>:5000
+```
+
+Fallback endpoint (if LB is not available):
 
 ```text
 <NODE_IP>:32000
@@ -145,7 +153,7 @@ Example registry endpoint (replace with your real node IP/hostname):
 
 ```bash
 # Set your registry endpoint
-REGISTRY_HOST=<NODE_IP>:32000
+REGISTRY_HOST=<EXTERNAL_LB_IP_OR_DNS>:5000
 
 # Frontend image
 docker build -t ${REGISTRY_HOST}/geoint-frontend:1.0.0 ./frontend
@@ -159,11 +167,17 @@ docker push ${REGISTRY_HOST}/geoint-rag-api:1.0.0
 ### 4.3 Deploy the full stack using images from the internal registry
 
 ```bash
-./deploy.sh --registry-host <NODE_IP>:32000
+./deploy.sh --registry-host <EXTERNAL_LB_IP_OR_DNS>:5000
 ```
 
 `deploy.sh` applies base manifests, deploys the internal registry, and then sets
 image references on `rag-api` and `geoint-frontend` deployments to:
+
+- `<EXTERNAL_LB_IP_OR_DNS>:5000/geoint-rag-api:1.0.0`
+- `<EXTERNAL_LB_IP_OR_DNS>:5000/geoint-frontend:1.0.0`
+
+If your environment does not provide a LoadBalancer address, use NodePort
+instead:
 
 - `<NODE_IP>:32000/geoint-rag-api:1.0.0`
 - `<NODE_IP>:32000/geoint-frontend:1.0.0`
