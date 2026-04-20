@@ -37,6 +37,10 @@ spec:
               value: "ogcapi-features-plugin,ogcapi-maps-plugin"
             - name: GEOSERVER_CSRF_DISABLED
               value: "true"
+            - name: GEOSERVER_CONSOLE_DISABLED
+              value: "false"
+            - name: PROXY_BASE_URL
+              value: "http://geoint-demo.local/geoserver"
           volumeMounts:
             - name: geoserver-data
               mountPath: /opt/geoserver/data_dir
