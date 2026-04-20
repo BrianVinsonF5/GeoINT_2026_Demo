@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: geoserver
-          image: kartoza/geoserver:2.25.2
+          image: kartoza/geoserver:2.28.3
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
