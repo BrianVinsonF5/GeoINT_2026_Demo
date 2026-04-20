@@ -57,6 +57,10 @@ geoint-demo/
 │   │   ├── postgis-init.yaml
 │   │   ├── geoserver-init.yaml
 │   │   └── nginx-config.yaml
+│   ├── registry/
+│   │   ├── deployment.yaml
+│   │   ├── service.yaml
+│   │   └── pvc.yaml
 │   ├── postgis/
 │   │   ├── deployment.yaml
 │   │   ├── service.yaml
@@ -109,23 +113,64 @@ Optional (for GPU acceleration):
 
 ---
 
-## 4) Build and Push Images
+## 4) Internal Docker Registry + Image Push/Pull
 
-Update registry references in:
-- `k8s/frontend/deployment.yaml` (`image: geoint-frontend:1.0.0`)
-- `k8s/rag-api/deployment.yaml` (`image: geoint-rag-api:1.0.0`)
+This repo now includes an internal registry deployment (`registry:2`) in the
+`geoint-demo` namespace:
 
-Build examples:
+- Deployment: `k8s/registry/deployment.yaml`
+- Service: `k8s/registry/service.yaml` (NodePort `32000`)
+- Storage: `k8s/registry/pvc.yaml`
+
+### 4.1 Deploy only the internal registry first
 
 ```bash
-# Frontend
-docker build -t geoint-frontend:1.0.0 ./frontend
-
-# RAG API
-docker build -t geoint-rag-api:1.0.0 ./rag-api
+chmod +x deploy.sh
+./deploy.sh --registry-only
 ```
 
-If your cluster requires registry pushes, tag/push accordingly and update manifests.
+Find a reachable endpoint for cluster nodes/workstations:
+
+```bash
+kubectl -n geoint-demo get svc internal-registry-service -o wide
+```
+
+Example registry endpoint (replace with your real node IP/hostname):
+
+```text
+<NODE_IP>:32000
+```
+
+### 4.2 Build, tag, and push app images to the internal registry
+
+```bash
+# Set your registry endpoint
+REGISTRY_HOST=<NODE_IP>:32000
+
+# Frontend image
+docker build -t ${REGISTRY_HOST}/geoint-frontend:1.0.0 ./frontend
+docker push ${REGISTRY_HOST}/geoint-frontend:1.0.0
+
+# RAG API image
+docker build -t ${REGISTRY_HOST}/geoint-rag-api:1.0.0 ./rag-api
+docker push ${REGISTRY_HOST}/geoint-rag-api:1.0.0
+```
+
+### 4.3 Deploy the full stack using images from the internal registry
+
+```bash
+./deploy.sh --registry-host <NODE_IP>:32000
+```
+
+`deploy.sh` applies base manifests, deploys the internal registry, and then sets
+image references on `rag-api` and `geoint-frontend` deployments to:
+
+- `<NODE_IP>:32000/geoint-rag-api:1.0.0`
+- `<NODE_IP>:32000/geoint-frontend:1.0.0`
+
+> Note: If your cluster runtime blocks plain HTTP registries, configure each node
+> to trust your internal registry as an insecure registry (or add TLS/auth to the
+> registry).
 
 ---
 
@@ -137,6 +182,11 @@ chmod +x deploy.sh
 ```
 
 `deploy.sh` applies manifests in dependency order and waits for readiness.
+
+Optional deploy flags:
+
+- `--registry-only`: deploy only foundational objects + internal registry
+- `--registry-host <host:port>`: update app deployments to pull from registry
 
 Before deploying, set AWS credentials in `k8s/secrets.yaml` under `bedrock-secret`:
 - `AWS_ACCESS_KEY_ID`
@@ -239,3 +289,6 @@ kubectl delete namespace geoint-demo
 ```
 
 This removes all deployments, services, jobs, PVC claims, and policies in the demo namespace.
+
+If you configured a local Docker/Podman insecure registry entry for this demo,
+you may also want to remove it after cleanup.
