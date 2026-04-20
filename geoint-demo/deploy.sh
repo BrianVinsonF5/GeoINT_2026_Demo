@@ -13,7 +13,7 @@ Options:
   --registry-host <host[:port]> Registry endpoint reachable by BOTH:
                                1) your external build workstation (push)
                                2) cluster nodes (pull)
-                               Example: registry.geoint-demo.local:80
+                               Example: registry.geoint-demo.local:443
                                When set, app deployments use:
                                <host[:port]>/geoint-frontend:1.0.0
                                <host[:port]>/geoint-rag-api:1.0.0
@@ -64,7 +64,7 @@ kubectl apply -f k8s/registry/ingress.yaml
 kubectl -n "$NAMESPACE" rollout status deployment/internal-registry --timeout=300s
 
 REGISTRY_INGRESS_HOST="registry.geoint-demo.local"
-REGISTRY_EXTERNAL_HINT="${REGISTRY_INGRESS_HOST}:80"
+REGISTRY_EXTERNAL_HINT="${REGISTRY_INGRESS_HOST}:443"
 
 if [[ "$REGISTRY_ONLY" == "true" ]]; then
   echo ""
@@ -75,8 +75,8 @@ if [[ "$REGISTRY_ONLY" == "true" ]]; then
   echo "Registry endpoint via ingress host: ${REGISTRY_EXTERNAL_HINT}"
   echo "Add this host entry to your workstation and cluster nodes as needed:"
   echo "  <INGRESS_IP_OR_DNS> ${REGISTRY_INGRESS_HOST}"
-  echo "IMPORTANT: registry:2 is HTTP by default."
-  echo "Configure your Docker/Podman client and cluster node runtimes to trust this insecure registry host[:port]."
+  echo "IMPORTANT: configure k8s/secrets.yaml internal-registry-tls with a real cert/key for ${REGISTRY_INGRESS_HOST}."
+  echo "Then trust that certificate on your Docker/Podman client and cluster node runtimes."
   echo "Then build/tag/push images and rerun ./deploy.sh --registry-host <host[:port]>."
   exit 0
 fi
@@ -150,7 +150,7 @@ echo "Internal registry service:"
 echo "   kubectl -n ${NAMESPACE} get ingress internal-registry-ingress"
 echo "   Registry endpoint via ingress host: ${REGISTRY_EXTERNAL_HINT}"
 echo "   hosts entry: <INGRESS_IP_OR_DNS> ${REGISTRY_INGRESS_HOST}"
-echo "   Note: if push/pull fails with HTTPS client error, trust this host[:port] as an insecure registry."
+echo "   Note: if push/pull fails with certificate errors, verify/trust the cert in secret/internal-registry-tls."
 echo ""
 if [[ -n "$REGISTRY_HOST" ]]; then
   echo "Custom app images deployed from: ${REGISTRY_HOST}"

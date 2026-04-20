@@ -140,15 +140,15 @@ kubectl -n geoint-demo get ingress internal-registry-ingress
 
 Use your ingress controller address with this host header / DNS name:
 
-```text
-registry.geoint-demo.local:80
+registry.geoint-demo.local:443
+registry.geoint-demo.local:443
 ```
 
 ### 4.2 Build, tag, and push app images to the internal registry
 
 ```bash
 # Set your registry endpoint
-REGISTRY_HOST=<INGRESS_IP_OR_DNS>:80
+REGISTRY_HOST=registry.geoint-demo.local:443
 
 # Frontend image
 docker build -t ${REGISTRY_HOST}/geoint-frontend:1.0.0 ./frontend
@@ -162,54 +162,38 @@ docker push ${REGISTRY_HOST}/geoint-rag-api:1.0.0
 ### 4.3 Deploy the full stack using images from the internal registry
 
 ```bash
-./deploy.sh --registry-host <INGRESS_IP_OR_DNS>:80
+./deploy.sh --registry-host registry.geoint-demo.local:443
 ```
 
 `deploy.sh` applies base manifests, deploys the internal registry, and then sets
 image references on `rag-api` and `geoint-frontend` deployments to:
 
-- `<INGRESS_IP_OR_DNS>:80/geoint-rag-api:1.0.0`
-- `<INGRESS_IP_OR_DNS>:80/geoint-frontend:1.0.0`
+- `registry.geoint-demo.local:443/geoint-rag-api:1.0.0`
+- `registry.geoint-demo.local:443/geoint-frontend:1.0.0`
 
-> Note: If your cluster runtime blocks plain HTTP registries, configure each node
-> to trust your internal registry as an insecure registry (or add TLS/auth to the
-> registry).
+> Note: This repo now configures TLS on the registry ingress using secret
+> `internal-registry-tls` in `k8s/secrets.yaml`. Replace placeholder cert/key
+> values with a valid cert for `registry.geoint-demo.local` before pushing images.
 
-### 4.4 Fix for `http: server gave HTTP response to HTTPS client`
+### 4.4 Configure registry TLS certificate trust
 
-`registry:2` is deployed as HTTP by default in this repo. Docker tries HTTPS
-first, so you must allow this registry as an insecure registry on:
+The ingress now terminates TLS for `registry.geoint-demo.local` using
+`internal-registry-tls` in `k8s/secrets.yaml`.
 
-1. your external build workstation (push)
-2. each Kubernetes node runtime (pull)
-
-For Docker Engine (Linux), set `/etc/docker/daemon.json`:
-
-```json
-{
-  "insecure-registries": ["<REGISTRY_HOST>"]
-}
-```
-
-Example:
-
-```json
-{
-  "insecure-registries": ["<INGRESS_IP_OR_DNS>:80"]
-}
-```
-
-Then restart Docker:
+1. Replace `tls.crt` and `tls.key` placeholders in `k8s/secrets.yaml` with a
+   real certificate and key for `registry.geoint-demo.local`.
+2. Apply/update secrets:
 
 ```bash
-sudo systemctl restart docker
+kubectl apply -f k8s/secrets.yaml
 ```
 
-For Docker Desktop, add the same value under Docker Engine settings and restart
-Docker Desktop.
+3. Trust that certificate authority (or self-signed cert) on:
+   - your external Docker/Podman build workstation (push)
+   - each Kubernetes node runtime (pull)
 
-For Kubernetes nodes using containerd, configure mirrors/insecure endpoints for
-the same registry host:port and restart containerd on each node.
+If Docker reports cert errors, install the cert in Docker's trust store for
+`registry.geoint-demo.local:443` and restart Docker.
 
 ---
 
