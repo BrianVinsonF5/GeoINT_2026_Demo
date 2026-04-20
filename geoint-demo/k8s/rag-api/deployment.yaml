@@ -48,10 +48,25 @@ spec:
               value: "8000"
             - name: CHROMA_COLLECTION
               value: geoint_documents
-            - name: OLLAMA_URL
-              value: http://ollama-service:11434/api/generate
-            - name: OLLAMA_MODEL
-              value: mistral
+            - name: AWS_REGION
+              value: us-east-1
+            - name: BEDROCK_MODEL_ID
+              value: anthropic.claude-3-haiku-20240307-v1:0
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: bedrock-secret
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bedrock-secret
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: AWS_SESSION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: bedrock-secret
+                  key: AWS_SESSION_TOKEN
           readinessProbe:
             httpGet:
               path: /api/health

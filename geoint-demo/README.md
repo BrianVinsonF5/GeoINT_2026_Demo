@@ -3,7 +3,7 @@
 Production-ready GEOINT demo stack combining:
 
 1. **Geospatial application**: PostGIS + GeoServer + OpenLayers frontend
-2. **RAG AI assistant**: FastAPI + ChromaDB + Ollama (Mistral)
+2. **RAG AI assistant**: FastAPI + ChromaDB + AWS Bedrock
 
 The design is optimized for an F5 tradeshow demo to highlight:
 - Layer 4/7 load balancing
@@ -34,10 +34,10 @@ The design is optimized for an F5 tradeshow demo to highlight:
  +------+-------+      +------+-------+                         +---+-------+----+
         |                     |                                     |       |
         |                     |                                     |       |
-        |               +-----v------+                         +----v--+ +--v-----+
-        |               | PostGIS    |                         |Chroma | | Ollama |
-        |               | geoint_db  |                         |DB     | |Mistral |
-        |               +------------+                         +-------+ +--------+
+        |               +-----v------+                         +----v--+ +----------------+
+        |               | PostGIS    |                         |Chroma | | AWS Bedrock    |
+        |               | geoint_db  |                         |DB     | | (Claude model) |
+        |               +------------+                         +-------+ +----------------+
 ```
 
 ---
@@ -73,7 +73,7 @@ geoint-demo/
 │   │   ├── deployment.yaml
 │   │   ├── service.yaml
 │   │   └── pvc.yaml
-│   ├── ollama/
+│   ├── ollama/               # Optional legacy local LLM stack (not used by deploy.sh)
 │   │   ├── deployment.yaml
 │   │   ├── service.yaml
 │   │   └── pvc.yaml
@@ -102,7 +102,7 @@ geoint-demo/
 - `kubectl` configured to target cluster
 - Ingress controller installed (NGINX ingress class used in manifests)
 - Docker/Podman to build custom images
-- Internet access for initial model pull and Python/NPM dependencies
+- Internet access for AWS Bedrock API access and Python/NPM dependencies
 
 Optional (for GPU acceleration):
 - NVIDIA GPU nodes + device plugin
@@ -137,6 +137,15 @@ chmod +x deploy.sh
 ```
 
 `deploy.sh` applies manifests in dependency order and waits for readiness.
+
+Before deploying, set AWS credentials in `k8s/secrets.yaml` under `bedrock-secret`:
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_SESSION_TOKEN` (optional)
+
+You can also adjust these RAG API Bedrock settings in `k8s/rag-api/deployment.yaml`:
+- `AWS_REGION`
+- `BEDROCK_MODEL_ID`
 
 ---
 
@@ -216,9 +225,9 @@ Ingress file includes F5 annotation placeholders for BIG-IP/NGINX integration.
   ```bash
   kubectl -n geoint-demo logs deploy/rag-api -f
   ```
-- Check model availability:
+- Check RAG API env vars for Bedrock:
   ```bash
-  kubectl -n geoint-demo exec deploy/ollama -- ollama list
+  kubectl -n geoint-demo describe deploy/rag-api
   ```
 
 ---
