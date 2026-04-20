@@ -1,4 +1,4 @@
-apiVersion: apps/v1
+erveapiVersion: apps/v1
 kind: Deployment
 metadata:
   name: geoserver
@@ -42,7 +42,7 @@ spec:
               mountPath: /opt/geoserver/data_dir
           readinessProbe:
             httpGet:
-              path: /geoserver/web/
+              path: /geoserver/ows?service=WMS&version=1.3.0&request=GetCapabilities
               port: 8080
             initialDelaySeconds: 60
             periodSeconds: 15
@@ -50,7 +50,7 @@ spec:
             failureThreshold: 8
           livenessProbe:
             httpGet:
-              path: /geoserver/web/
+              path: /geoserver/ows?service=WMS&version=1.3.0&request=GetCapabilities
               port: 8080
             initialDelaySeconds: 90
             periodSeconds: 20
