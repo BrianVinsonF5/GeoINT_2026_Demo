@@ -80,6 +80,8 @@ if [[ "$REGISTRY_ONLY" == "true" ]]; then
   echo ""
   echo "Preferred external endpoint (LoadBalancer): ${REGISTRY_EXTERNAL_HINT}"
   echo "Fallback endpoint (NodePort): <NODE_IP>:32000"
+  echo "IMPORTANT: registry:2 is HTTP by default."
+  echo "Configure your Docker/Podman client and cluster node runtimes to trust this insecure registry host:port."
   echo "Then build/tag/push images and rerun ./deploy.sh --registry-host <host:port>."
   exit 0
 fi
@@ -153,6 +155,7 @@ echo "Internal registry service:"
 echo "   kubectl -n ${NAMESPACE} get svc internal-registry-service"
 echo "   Preferred external endpoint: ${REGISTRY_EXTERNAL_HINT}"
 echo "   Fallback endpoint: <NODE_IP>:32000"
+echo "   Note: if push/pull fails with HTTPS client error, trust this host:port as an insecure registry."
 echo ""
 if [[ -n "$REGISTRY_HOST" ]]; then
   echo "Custom app images deployed from: ${REGISTRY_HOST}"

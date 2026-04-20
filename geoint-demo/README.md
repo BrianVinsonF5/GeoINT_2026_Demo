@@ -186,6 +186,42 @@ instead:
 > to trust your internal registry as an insecure registry (or add TLS/auth to the
 > registry).
 
+### 4.4 Fix for `http: server gave HTTP response to HTTPS client`
+
+`registry:2` is deployed as HTTP by default in this repo. Docker tries HTTPS
+first, so you must allow this registry as an insecure registry on:
+
+1. your external build workstation (push)
+2. each Kubernetes node runtime (pull)
+
+For Docker Engine (Linux), set `/etc/docker/daemon.json`:
+
+```json
+{
+  "insecure-registries": ["<REGISTRY_HOST>"]
+}
+```
+
+Example:
+
+```json
+{
+  "insecure-registries": ["10.1.1.5:32000"]
+}
+```
+
+Then restart Docker:
+
+```bash
+sudo systemctl restart docker
+```
+
+For Docker Desktop, add the same value under Docker Engine settings and restart
+Docker Desktop.
+
+For Kubernetes nodes using containerd, configure mirrors/insecure endpoints for
+the same registry host:port and restart containerd on each node.
+
 ---
 
 ## 5) Deploy
