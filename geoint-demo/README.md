@@ -125,6 +125,10 @@ controller:
 - Ingress: `k8s/registry/ingress.yaml` (host `registry.geoint-demo.local`)
 - Storage: `k8s/registry/pvc.yaml`
 
+The registry ingress is configured for large Docker layer uploads with:
+- `nginx.ingress.kubernetes.io/proxy-body-size: "0"`
+- `nginx.ingress.kubernetes.io/proxy-request-buffering: "off"`
+
 ### 4.1 Deploy only the internal registry first
 
 ```bash
@@ -194,6 +198,10 @@ kubectl apply -f k8s/secrets.yaml
 
 If Docker reports cert errors, install the cert in Docker's trust store for
 `registry.geoint-demo.local:443` and restart Docker.
+
+If push fails with `413 Request Entity Too Large`, re-apply
+`k8s/registry/ingress.yaml` and confirm those two NGINX ingress annotations are
+present on `internal-registry-ingress`.
 
 ---
 
