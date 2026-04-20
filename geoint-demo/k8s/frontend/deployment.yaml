@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: geoint-frontend:1.0.0
+          image: registry.geoint-demo.local/geoint-frontend:1.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

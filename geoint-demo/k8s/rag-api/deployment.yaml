@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: rag-api
-          image: geoint-rag-api:1.0.0
+          image: registry.geoint-demo.local/geoint-rag-api:1.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
