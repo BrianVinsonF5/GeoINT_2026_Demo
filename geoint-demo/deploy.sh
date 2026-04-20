@@ -10,13 +10,13 @@ usage() {
 Usage: ./deploy.sh [options]
 
 Options:
-  --registry-host <host:port>  Registry endpoint reachable by BOTH:
+  --registry-host <host[:port]> Registry endpoint reachable by BOTH:
                                1) your external build workstation (push)
                                2) cluster nodes (pull)
-                               Example: 10.20.30.40:5000
+                               Example: registry.geoint-demo.local:80
                                When set, app deployments use:
-                               <host:port>/geoint-frontend:1.0.0
-                               <host:port>/geoint-rag-api:1.0.0
+                               <host[:port]>/geoint-frontend:1.0.0
+                               <host[:port]>/geoint-rag-api:1.0.0
   --registry-only              Deploy only namespace/foundational objects and
                                the internal Docker registry.
   -h, --help                   Show this help message.
@@ -28,7 +28,7 @@ while [[ $# -gt 0 ]]; do
     --registry-host)
       REGISTRY_HOST="${2:-}"
       if [[ -z "$REGISTRY_HOST" ]]; then
-        echo "ERROR: --registry-host requires a value (host:port)." >&2
+        echo "ERROR: --registry-host requires a value (host[:port])." >&2
         exit 1
       fi
       shift 2
@@ -60,29 +60,24 @@ echo "[2/10] Deploying internal Docker registry..."
 kubectl apply -f k8s/registry/pvc.yaml
 kubectl apply -f k8s/registry/deployment.yaml
 kubectl apply -f k8s/registry/service.yaml
+kubectl apply -f k8s/registry/ingress.yaml
 kubectl -n "$NAMESPACE" rollout status deployment/internal-registry --timeout=300s
 
-REGISTRY_LB_IP="$(kubectl -n "$NAMESPACE" get svc internal-registry-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
-REGISTRY_LB_DNS="$(kubectl -n "$NAMESPACE" get svc internal-registry-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
-REGISTRY_EXTERNAL_HINT="<EXTERNAL_LB_IP_OR_DNS>:5000"
-
-if [[ -n "$REGISTRY_LB_IP" ]]; then
-  REGISTRY_EXTERNAL_HINT="${REGISTRY_LB_IP}:5000"
-elif [[ -n "$REGISTRY_LB_DNS" ]]; then
-  REGISTRY_EXTERNAL_HINT="${REGISTRY_LB_DNS}:5000"
-fi
+REGISTRY_INGRESS_HOST="registry.geoint-demo.local"
+REGISTRY_EXTERNAL_HINT="${REGISTRY_INGRESS_HOST}:80"
 
 if [[ "$REGISTRY_ONLY" == "true" ]]; then
   echo ""
   echo "Internal registry is ready."
-  echo "Registry service details:"
-  kubectl -n "$NAMESPACE" get svc internal-registry-service
+  echo "Registry ingress details:"
+  kubectl -n "$NAMESPACE" get ingress internal-registry-ingress
   echo ""
-  echo "Preferred external endpoint (LoadBalancer): ${REGISTRY_EXTERNAL_HINT}"
-  echo "Fallback endpoint (NodePort): <NODE_IP>:32000"
+  echo "Registry endpoint via ingress host: ${REGISTRY_EXTERNAL_HINT}"
+  echo "Add this host entry to your workstation and cluster nodes as needed:"
+  echo "  <INGRESS_IP_OR_DNS> ${REGISTRY_INGRESS_HOST}"
   echo "IMPORTANT: registry:2 is HTTP by default."
-  echo "Configure your Docker/Podman client and cluster node runtimes to trust this insecure registry host:port."
-  echo "Then build/tag/push images and rerun ./deploy.sh --registry-host <host:port>."
+  echo "Configure your Docker/Podman client and cluster node runtimes to trust this insecure registry host[:port]."
+  echo "Then build/tag/push images and rerun ./deploy.sh --registry-host <host[:port]>."
   exit 0
 fi
 
@@ -152,16 +147,16 @@ echo "   http://${INGRESS_HOST}/geoserver/web/"
 echo "   http://${INGRESS_HOST}/api/health"
 echo ""
 echo "Internal registry service:"
-echo "   kubectl -n ${NAMESPACE} get svc internal-registry-service"
-echo "   Preferred external endpoint: ${REGISTRY_EXTERNAL_HINT}"
-echo "   Fallback endpoint: <NODE_IP>:32000"
-echo "   Note: if push/pull fails with HTTPS client error, trust this host:port as an insecure registry."
+echo "   kubectl -n ${NAMESPACE} get ingress internal-registry-ingress"
+echo "   Registry endpoint via ingress host: ${REGISTRY_EXTERNAL_HINT}"
+echo "   hosts entry: <INGRESS_IP_OR_DNS> ${REGISTRY_INGRESS_HOST}"
+echo "   Note: if push/pull fails with HTTPS client error, trust this host[:port] as an insecure registry."
 echo ""
 if [[ -n "$REGISTRY_HOST" ]]; then
   echo "Custom app images deployed from: ${REGISTRY_HOST}"
 else
   echo "Tip: set --registry-host to deploy app images from internal registry."
-  echo "Example: ./deploy.sh --registry-host <EXTERNAL_LB_IP_OR_DNS>:5000"
+  echo "Example: ./deploy.sh --registry-host ${REGISTRY_EXTERNAL_HINT}"
 fi
 
 echo ""

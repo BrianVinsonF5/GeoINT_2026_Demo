@@ -59,6 +59,7 @@ geoint-demo/
 │   │   └── nginx-config.yaml
 │   ├── registry/
 │   │   ├── deployment.yaml
+│   │   ├── ingress.yaml
 │   │   ├── service.yaml
 │   │   └── pvc.yaml
 │   ├── postgis/
@@ -116,11 +117,12 @@ Optional (for GPU acceleration):
 ## 4) Internal Docker Registry + Image Push/Pull
 
 This repo now includes an internal registry deployment (`registry:2`) in the
-`geoint-demo` namespace and exposes it for external workstations:
+`geoint-demo` namespace and exposes it through the existing NGINX ingress
+controller:
 
 - Deployment: `k8s/registry/deployment.yaml`
-- Service: `k8s/registry/service.yaml` (`LoadBalancer` on port `5000`, with
-  NodePort fallback `32000`)
+- Service: `k8s/registry/service.yaml` (`ClusterIP` on port `5000`)
+- Ingress: `k8s/registry/ingress.yaml` (host `registry.geoint-demo.local`)
 - Storage: `k8s/registry/pvc.yaml`
 
 ### 4.1 Deploy only the internal registry first
@@ -130,30 +132,23 @@ chmod +x deploy.sh
 ./deploy.sh --registry-only
 ```
 
-Find a reachable endpoint from your **external build workstation** and from
-**cluster nodes**:
+Check the registry ingress:
 
 ```bash
-kubectl -n geoint-demo get svc internal-registry-service -o wide
+kubectl -n geoint-demo get ingress internal-registry-ingress
 ```
 
-Preferred endpoint (external LB):
+Use your ingress controller address with this host header / DNS name:
 
 ```text
-<EXTERNAL_LB_IP_OR_DNS>:5000
-```
-
-Fallback endpoint (if LB is not available):
-
-```text
-<NODE_IP>:32000
+registry.geoint-demo.local:80
 ```
 
 ### 4.2 Build, tag, and push app images to the internal registry
 
 ```bash
 # Set your registry endpoint
-REGISTRY_HOST=<EXTERNAL_LB_IP_OR_DNS>:5000
+REGISTRY_HOST=<INGRESS_IP_OR_DNS>:80
 
 # Frontend image
 docker build -t ${REGISTRY_HOST}/geoint-frontend:1.0.0 ./frontend
@@ -167,20 +162,14 @@ docker push ${REGISTRY_HOST}/geoint-rag-api:1.0.0
 ### 4.3 Deploy the full stack using images from the internal registry
 
 ```bash
-./deploy.sh --registry-host <EXTERNAL_LB_IP_OR_DNS>:5000
+./deploy.sh --registry-host <INGRESS_IP_OR_DNS>:80
 ```
 
 `deploy.sh` applies base manifests, deploys the internal registry, and then sets
 image references on `rag-api` and `geoint-frontend` deployments to:
 
-- `<EXTERNAL_LB_IP_OR_DNS>:5000/geoint-rag-api:1.0.0`
-- `<EXTERNAL_LB_IP_OR_DNS>:5000/geoint-frontend:1.0.0`
-
-If your environment does not provide a LoadBalancer address, use NodePort
-instead:
-
-- `<NODE_IP>:32000/geoint-rag-api:1.0.0`
-- `<NODE_IP>:32000/geoint-frontend:1.0.0`
+- `<INGRESS_IP_OR_DNS>:80/geoint-rag-api:1.0.0`
+- `<INGRESS_IP_OR_DNS>:80/geoint-frontend:1.0.0`
 
 > Note: If your cluster runtime blocks plain HTTP registries, configure each node
 > to trust your internal registry as an insecure registry (or add TLS/auth to the
@@ -206,7 +195,7 @@ Example:
 
 ```json
 {
-  "insecure-registries": ["10.1.1.5:32000"]
+  "insecure-registries": ["<INGRESS_IP_OR_DNS>:80"]
 }
 ```
 

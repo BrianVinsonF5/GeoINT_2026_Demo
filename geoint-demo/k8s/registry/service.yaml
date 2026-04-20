@@ -12,5 +12,4 @@ spec:
     - name: registry
       port: 5000
       targetPort: 5000
-      nodePort: 32000
-  type: LoadBalancer
+  type: ClusterIP
