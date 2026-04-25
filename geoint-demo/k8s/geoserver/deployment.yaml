@@ -11,8 +11,8 @@ data:
     timeout=60
 
     # Concurrency limits
-    ows.global=100
-    ows.wms.getmap=20
+    ows.global=1000
+    ows.wms.getmap=200
     ows.gwc=16
     user=12
     ip=20
