@@ -14,7 +14,7 @@ data:
     ows.global=1000
     ows.wms.getmap=200
     ows.gwc=16
-    user=12
+    user=80
     ip=20
 
     # Per-user rate limits (sliding window)
