@@ -3,11 +3,10 @@ kind: PersistentVolumeClaim
 metadata:
   name: ollama-models-pvc
   namespace: geoint-demo
-  labels:
-    app: ollama
+  labels: { app: ollama }
+  annotations:
+    nfs.io/storage-path: "ollama"
 spec:
-  accessModes:
-    - ReadWriteOnce
+  accessModes: [ReadWriteOnce]
   resources:
-    requests:
-      storage: 10Gi
+    requests: { storage: 10Gi }

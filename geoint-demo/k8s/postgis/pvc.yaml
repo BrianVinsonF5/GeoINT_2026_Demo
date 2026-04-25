@@ -5,9 +5,9 @@ metadata:
   namespace: geoint-demo
   labels:
     app: postgis
+  annotations:
+    nfs.io/storage-path: "postgis"          # ← this is the fix
 spec:
-  accessModes:
-    - ReadWriteOnce
+  accessModes: [ReadWriteOnce]
   resources:
-    requests:
-      storage: 5Gi
+    requests: { storage: 5Gi }

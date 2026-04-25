@@ -152,7 +152,7 @@ registry.geoint-demo.local:443
 
 ```bash
 # Set your registry endpoint
-REGISTRY_HOST=registry.geoint-demo.local:443
+REGISTRY_HOST=registry.geoint-demo.local
 
 # Frontend image
 docker build -t ${REGISTRY_HOST}/geoint-frontend:1.0.0 ./frontend

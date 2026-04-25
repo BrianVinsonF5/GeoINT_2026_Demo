@@ -3,11 +3,10 @@ kind: PersistentVolumeClaim
 metadata:
   name: geoserver-data-pvc
   namespace: geoint-demo
-  labels:
-    app: geoserver
+  labels: { app: geoserver }
+  annotations:
+    nfs.io/storage-path: "geoserver"
 spec:
-  accessModes:
-    - ReadWriteOnce
+  accessModes: [ReadWriteOnce]
   resources:
-    requests:
-      storage: 2Gi
+    requests: { storage: 2Gi }

@@ -3,11 +3,10 @@ kind: PersistentVolumeClaim
 metadata:
   name: chromadb-pvc
   namespace: geoint-demo
-  labels:
-    app: chromadb
+  labels: { app: chromadb }
+  annotations:
+    nfs.io/storage-path: "chromadb"
 spec:
-  accessModes:
-    - ReadWriteOnce
+  accessModes: [ReadWriteOnce]
   resources:
-    requests:
-      storage: 2Gi
+    requests: { storage: 2Gi }
