@@ -223,7 +223,7 @@ Before deploying, set the Gemini API key in `k8s/secrets.yaml` under `gemini-sec
 - `GEMINI_API_KEY`
 
 You can also adjust these RAG API Gemini settings in `k8s/rag-api/deployment.yaml`:
-- `GEMINI_MODEL` (default: `gemini-2.0-flash`)
+- `GEMINI_MODEL` (default: `gemini-3.1-flash-lite-preview`)
 
 Optional advanced Gemini API settings (in `rag-api/app.py` env):
 - `GEMINI_API_ENDPOINT` (defaults to `https://generativelanguage.googleapis.com/v1beta`)

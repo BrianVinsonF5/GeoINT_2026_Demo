@@ -28,7 +28,7 @@ CHROMA_HOST = os.getenv("CHROMA_HOST", "chromadb-service")
 CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
 CHROMA_COLLECTION = os.getenv("CHROMA_COLLECTION", "geoint_documents")
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_API_ENDPOINT = os.getenv(
     "GEMINI_API_ENDPOINT", "https://generativelanguage.googleapis.com/v1beta"

@@ -11,7 +11,7 @@ REMOVE_ALL="false"
 
 FRONTEND_IMAGE_NAME="geoint-frontend"
 RAG_API_IMAGE_NAME="geoint-rag-api"
-IMAGE_TAG="1.0.0"
+IMAGE_TAG="1.0.4"
 
 usage() {
   cat <<USAGE
