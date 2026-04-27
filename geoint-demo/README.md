@@ -3,7 +3,7 @@
 Production-ready GEOINT demo stack combining:
 
 1. **Geospatial application**: PostGIS + GeoServer + OpenLayers frontend
-2. **RAG AI assistant**: FastAPI + ChromaDB + AWS Bedrock
+2. **RAG AI assistant**: FastAPI + ChromaDB + Google AI (Gemini Flash)
 
 The design is optimized for an F5 tradeshow demo to highlight:
 - Layer 4/7 load balancing
@@ -35,8 +35,8 @@ The design is optimized for an F5 tradeshow demo to highlight:
         |                     |                                     |       |
         |                     |                                     |       |
         |               +-----v------+                         +----v--+ +----------------+
-        |               | PostGIS    |                         |Chroma | | AWS Bedrock    |
-        |               | geoint_db  |                         |DB     | | (Claude model) |
+        |               | PostGIS    |                         |Chroma | | Google AI      |
+        |               | geoint_db  |                         |DB     | | (Gemini Flash) |
         |               +------------+                         +-------+ +----------------+
 ```
 
@@ -107,7 +107,7 @@ geoint-demo/
 - `kubectl` configured to target cluster
 - Ingress controller installed (NGINX ingress class used in manifests)
 - Docker/Podman to build custom images
-- Internet access for AWS Bedrock API access and Python/NPM dependencies
+- Internet access for Google AI API access and Python/NPM dependencies
 
 Optional (for GPU acceleration):
 - NVIDIA GPU nodes + device plugin
@@ -219,17 +219,14 @@ Optional deploy flags:
 - `--registry-only`: deploy only foundational objects + internal registry
 - `--registry-host <host:port>`: update app deployments to pull from registry
 
-Before deploying, set the Bedrock API key in `k8s/secrets.yaml` under `bedrock-secret`:
-- `BEDROCK_API_KEY` (value typically starts with `bedrock-api-key-`)
+Before deploying, set the Gemini API key in `k8s/secrets.yaml` under `gemini-secret`:
+- `GEMINI_API_KEY`
 
-You can also adjust these RAG API Bedrock settings in `k8s/rag-api/deployment.yaml`:
-- `AWS_REGION`
-- `BEDROCK_MODEL_ID`
+You can also adjust these RAG API Gemini settings in `k8s/rag-api/deployment.yaml`:
+- `GEMINI_MODEL` (default: `gemini-2.0-flash`)
 
-Optional advanced Bedrock API key settings (in `rag-api/app.py` env):
-- `BEDROCK_RUNTIME_ENDPOINT` (defaults to `https://bedrock-runtime.<AWS_REGION>.amazonaws.com`)
-- `BEDROCK_API_KEY_HEADER` (defaults to `x-api-key`)
-- `BEDROCK_API_KEY_AUTH_SCHEME` (`bearer` to also send `Authorization: Bearer <key>`)
+Optional advanced Gemini API settings (in `rag-api/app.py` env):
+- `GEMINI_API_ENDPOINT` (defaults to `https://generativelanguage.googleapis.com/v1beta`)
 
 ---
 
@@ -309,7 +306,7 @@ Ingress file includes F5 annotation placeholders for BIG-IP/NGINX integration.
   ```bash
   kubectl -n geoint-demo logs deploy/rag-api -f
   ```
-- Check RAG API env vars for Bedrock:
+- Check RAG API env vars for Gemini:
   ```bash
   kubectl -n geoint-demo describe deploy/rag-api
   ```

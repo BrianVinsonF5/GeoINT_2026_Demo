@@ -1,6 +1,5 @@
 langchain==0.2.14
 langchain-community==0.2.12
-boto3==1.35.14
 chromadb==0.5.5
 fastapi==0.112.0
 uvicorn==0.30.5
