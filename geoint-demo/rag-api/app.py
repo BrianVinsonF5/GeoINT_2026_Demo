@@ -5,8 +5,8 @@ import re
 import asyncio
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
+from urllib import error, parse, request
 
-import boto3
 import chromadb
 import psycopg2
 from fastapi import FastAPI, HTTPException
@@ -30,10 +30,11 @@ CHROMA_COLLECTION = os.getenv("CHROMA_COLLECTION", "geoint_documents")
 
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0")
+BEDROCK_API_KEY = os.getenv("BEDROCK_API_KEY", "").strip()
+BEDROCK_RUNTIME_ENDPOINT = os.getenv("BEDROCK_RUNTIME_ENDPOINT", f"https://bedrock-runtime.{AWS_REGION}.amazonaws.com")
+BEDROCK_API_KEY_HEADER = os.getenv("BEDROCK_API_KEY_HEADER", "x-api-key")
+BEDROCK_API_KEY_AUTH_SCHEME = os.getenv("BEDROCK_API_KEY_AUTH_SCHEME", "").strip().lower()
 
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-AWS_SESSION_TOKEN = os.getenv("AWS_SESSION_TOKEN")
 
 
 class ChatRequest(BaseModel):
@@ -52,17 +53,6 @@ app = FastAPI(title="GEOINT RAG API", version="1.0.0")
 embedding_model: Optional[SentenceTransformer] = None
 chroma_client = None
 chroma_collection = None
-bedrock_client = None
-
-
-def create_bedrock_client():
-    kwargs = {"region_name": AWS_REGION}
-    if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
-        kwargs["aws_access_key_id"] = AWS_ACCESS_KEY_ID
-        kwargs["aws_secret_access_key"] = AWS_SECRET_ACCESS_KEY
-        if AWS_SESSION_TOKEN:
-            kwargs["aws_session_token"] = AWS_SESSION_TOKEN
-    return boto3.client("bedrock-runtime", **kwargs)
 
 
 def normalize_value(value: Any) -> str:
@@ -288,8 +278,8 @@ def extract_bedrock_text(payload: Dict[str, Any]) -> str:
 
 
 def invoke_bedrock(prompt: str) -> str:
-    if bedrock_client is None:
-        raise RuntimeError("Bedrock client is not initialized")
+    if not BEDROCK_API_KEY:
+        raise RuntimeError("BEDROCK_API_KEY is not configured")
 
     request_body = {
         "anthropic_version": "bedrock-2023-05-31",
@@ -298,13 +288,31 @@ def invoke_bedrock(prompt: str) -> str:
         "messages": [{"role": "user", "content": prompt}],
     }
 
-    response = bedrock_client.invoke_model(
-        modelId=BEDROCK_MODEL_ID,
-        body=json.dumps(request_body),
-        accept="application/json",
-        contentType="application/json",
+    encoded_model_id = parse.quote(BEDROCK_MODEL_ID, safe="")
+    invoke_url = f"{BEDROCK_RUNTIME_ENDPOINT.rstrip('/')}/model/{encoded_model_id}/invoke"
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        BEDROCK_API_KEY_HEADER: BEDROCK_API_KEY,
+    }
+
+    if BEDROCK_API_KEY_AUTH_SCHEME == "bearer":
+        headers["authorization"] = f"Bearer {BEDROCK_API_KEY}"
+
+    req = request.Request(
+        url=invoke_url,
+        data=json.dumps(request_body).encode("utf-8"),
+        headers=headers,
+        method="POST",
     )
-    payload = json.loads(response["body"].read())
+
+    try:
+        with request.urlopen(req, timeout=90) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Bedrock API request failed with HTTP {exc.code}: {body}") from exc
+
     return extract_bedrock_text(payload)
 
 
@@ -314,11 +322,10 @@ async def query_bedrock(prompt: str) -> str:
 
 @app.on_event("startup")
 def startup_event() -> None:
-    global bedrock_client
-
     try:
-        bedrock_client = create_bedrock_client()
-        logger.info("Initialized AWS Bedrock client in region %s", AWS_REGION)
+        if not BEDROCK_API_KEY:
+            logger.warning("BEDROCK_API_KEY is not configured; /api/chat calls will fail")
+        logger.info("Configured Bedrock runtime endpoint: %s", BEDROCK_RUNTIME_ENDPOINT)
         init_vector_store()
     except Exception as exc:
         logger.exception("Startup initialization failed: %s", exc)
@@ -326,7 +333,7 @@ def startup_event() -> None:
 
 @app.get("/api/health")
 def health() -> Dict[str, str]:
-    status = "ok" if chroma_collection is not None and embedding_model is not None and bedrock_client is not None else "degraded"
+    status = "ok" if chroma_collection is not None and embedding_model is not None and bool(BEDROCK_API_KEY) else "degraded"
     return {"status": status}
 
 

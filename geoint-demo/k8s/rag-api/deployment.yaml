@@ -52,21 +52,11 @@ spec:
               value: us-east-1
             - name: BEDROCK_MODEL_ID
               value: anthropic.claude-3-haiku-20240307-v1:0
-            - name: AWS_ACCESS_KEY_ID
+            - name: BEDROCK_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: bedrock-secret
-                  key: AWS_ACCESS_KEY_ID
-            - name: AWS_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: bedrock-secret
-                  key: AWS_SECRET_ACCESS_KEY
-            - name: AWS_SESSION_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: bedrock-secret
-                  key: AWS_SESSION_TOKEN
+                  key: BEDROCK_API_KEY
           readinessProbe:
             httpGet:
               path: /api/health

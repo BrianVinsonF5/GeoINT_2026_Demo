@@ -219,14 +219,17 @@ Optional deploy flags:
 - `--registry-only`: deploy only foundational objects + internal registry
 - `--registry-host <host:port>`: update app deployments to pull from registry
 
-Before deploying, set AWS credentials in `k8s/secrets.yaml` under `bedrock-secret`:
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
-- `AWS_SESSION_TOKEN` (optional)
+Before deploying, set the Bedrock API key in `k8s/secrets.yaml` under `bedrock-secret`:
+- `BEDROCK_API_KEY` (value typically starts with `bedrock-api-key-`)
 
 You can also adjust these RAG API Bedrock settings in `k8s/rag-api/deployment.yaml`:
 - `AWS_REGION`
 - `BEDROCK_MODEL_ID`
+
+Optional advanced Bedrock API key settings (in `rag-api/app.py` env):
+- `BEDROCK_RUNTIME_ENDPOINT` (defaults to `https://bedrock-runtime.<AWS_REGION>.amazonaws.com`)
+- `BEDROCK_API_KEY_HEADER` (defaults to `x-api-key`)
+- `BEDROCK_API_KEY_AUTH_SCHEME` (`bearer` to also send `Authorization: Bearer <key>`)
 
 ---
 
