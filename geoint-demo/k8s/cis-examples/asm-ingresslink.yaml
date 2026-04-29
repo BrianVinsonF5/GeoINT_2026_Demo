@@ -1,0 +1,44 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: geoint-nginx-asm
+  namespace: geoint-demo
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: geoint-asm.demo.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-service
+                port:
+                  number: 80
+          - path: /geoserver
+            pathType: Prefix
+            backend:
+              service:
+                name: geoserver-service
+                port:
+                  number: 8080
+---
+apiVersion: cis.f5.com/v1
+kind: IngressLink
+metadata:
+  name: geoint-cis-asm-ingresslink
+  namespace: geoint-demo
+  annotations:
+    # BIG-IP virtual server address (replace for your lab)
+    virtual-server.f5.com/partition: "Common"
+    virtual-server.f5.com/balance: "least-connections-member"
+    # BIG-IP ASM policy (WAF)
+    virtual-server.f5.com/waf: "/Common/geoint-asm-policy"
+spec:
+  virtualServerAddress: "10.1.10.111"
+  host: geoint-asm.demo.local
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ingress-nginx
+      app.kubernetes.io/component: controller

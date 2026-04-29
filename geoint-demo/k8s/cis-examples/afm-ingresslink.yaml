@@ -1,0 +1,37 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: geoint-nginx-afm
+  namespace: geoint-demo
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: geoint-afm.demo.local
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: rag-api-service
+                port:
+                  number: 8000
+---
+apiVersion: cis.f5.com/v1
+kind: IngressLink
+metadata:
+  name: geoint-cis-afm-ingresslink
+  namespace: geoint-demo
+  annotations:
+    # BIG-IP virtual server address (replace for your lab)
+    virtual-server.f5.com/partition: "Common"
+    virtual-server.f5.com/balance: "round-robin"
+    # BIG-IP AFM policy (L3/L4 firewall policy on the virtual server)
+    virtual-server.f5.com/firewall: "/Common/geoint-afm-policy"
+spec:
+  virtualServerAddress: "10.1.10.112"
+  host: geoint-afm.demo.local
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ingress-nginx
+      app.kubernetes.io/component: controller
