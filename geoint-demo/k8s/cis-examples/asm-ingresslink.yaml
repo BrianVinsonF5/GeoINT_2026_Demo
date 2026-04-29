@@ -6,7 +6,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: geoint-asm.demo.local
+    - host: geoint-asm.f5demos.com
       http:
         paths:
           - path: /
@@ -28,7 +28,7 @@ apiVersion: cis.f5.com/v1
 kind: IngressLink
 metadata:
   name: geoint-cis-asm-ingresslink
-  namespace: geoint-demo
+  namespace: nginx-ingress
   annotations:
     # BIG-IP virtual server address (replace for your lab)
     virtual-server.f5.com/partition: "Common"
@@ -37,8 +37,7 @@ metadata:
     virtual-server.f5.com/waf: "/Common/geoint-asm-policy"
 spec:
   virtualServerAddress: "10.1.10.111"
-  host: geoint-asm.demo.local
+  host: geoint-asm.f5demos.com
   selector:
     matchLabels:
-      app.kubernetes.io/name: ingress-nginx
-      app.kubernetes.io/component: controller
+      app: ingresslink

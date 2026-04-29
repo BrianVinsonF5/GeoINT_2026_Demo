@@ -6,7 +6,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: geoint-ltm.demo.local
+    - host: geoint-ltm.f5demos.com
       http:
         paths:
           - path: /
@@ -28,8 +28,8 @@ metadata:
     virtual-server.f5.com/balance: "round-robin"
 spec:
   virtualServerAddress: "10.1.10.110"
-  host: geoint-ltm.demo.local
+  host: geoint-ltm.f5demos.com
   selector:
     matchLabels:
-      app.kubernetes.io/name: ingress-nginx
-      app.kubernetes.io/component: controller
+      app: ingresslink
+
