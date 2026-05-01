@@ -37,7 +37,7 @@ metadata:
     virtual-server.f5.com/partition: "Common"
     virtual-server.f5.com/balance: "round-robin"
 spec:
-  virtualServerAddress: "10.1.10.113"
+  virtualServerAddress: "10.1.10.110"
   host: registry.geoint-demo.local
   selector:
     matchLabels:
