@@ -70,6 +70,23 @@ body {
   color: var(--muted);
 }
 
+.status-toggle {
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.status-toggle.enabled {
+  background: rgba(15, 52, 96, 0.85);
+  border-color: rgba(46, 204, 113, 0.65);
+  color: #c7f9d8;
+}
+
+.status-toggle.disabled {
+  background: rgba(31, 41, 55, 0.9);
+  border-color: rgba(233, 69, 96, 0.45);
+  color: #f3b0bb;
+}
+
 .content-grid {
   display: grid;
   grid-template-columns: 30% 70%;

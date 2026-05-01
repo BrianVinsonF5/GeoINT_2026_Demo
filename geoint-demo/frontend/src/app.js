@@ -125,6 +125,26 @@ document.getElementById('layer-reports').addEventListener('change', (e) => {
 const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
 const chatSend = document.getElementById('chat-send');
+const guardrailsToggle = document.getElementById('guardrails-toggle');
+let guardrailsEnabled = true;
+
+function updateGuardrailsToggle() {
+  if (!guardrailsToggle) return;
+  guardrailsToggle.textContent = guardrailsEnabled
+    ? 'AI Gateway: Guardrails Enabled'
+    : 'AI Gateway: Guardrails Disabled';
+  guardrailsToggle.classList.toggle('enabled', guardrailsEnabled);
+  guardrailsToggle.classList.toggle('disabled', !guardrailsEnabled);
+  guardrailsToggle.setAttribute('aria-pressed', String(guardrailsEnabled));
+}
+
+if (guardrailsToggle) {
+  updateGuardrailsToggle();
+  guardrailsToggle.addEventListener('click', () => {
+    guardrailsEnabled = !guardrailsEnabled;
+    updateGuardrailsToggle();
+  });
+}
 
 function addMessage(text, role = 'assistant') {
   const el = document.createElement('div');
@@ -178,7 +198,10 @@ async function sendChat() {
     const resp = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({
+        message,
+        guardrails_enabled: guardrailsEnabled,
+      }),
     });
 
     if (!resp.ok) {

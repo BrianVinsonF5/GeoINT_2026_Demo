@@ -55,6 +55,21 @@ spec:
                 secretKeyRef:
                   name: gemini-secret
                   key: GEMINI_API_KEY
+            - name: CALYPSOAI_URL
+              valueFrom:
+                secretKeyRef:
+                  name: calypsoai-secret
+                  key: CALYPSOAI_URL
+            - name: CALYPSOAI_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: calypsoai-secret
+                  key: CALYPSOAI_TOKEN
+            - name: CALYPSOAI_PROJECT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: calypsoai-secret
+                  key: CALYPSOAI_PROJECT_ID
           readinessProbe:
             httpGet:
               path: /api/health

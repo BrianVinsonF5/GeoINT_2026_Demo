@@ -9,6 +9,7 @@ from urllib import error, parse, request
 
 import chromadb
 import psycopg2
+from calypsoai import CalypsoAI
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sentence_transformers import SentenceTransformer
@@ -34,11 +35,16 @@ GEMINI_API_ENDPOINT = os.getenv(
     "GEMINI_API_ENDPOINT", "https://generativelanguage.googleapis.com/v1beta"
 ).rstrip("/")
 
+CALYPSOAI_URL = os.getenv("CALYPSOAI_URL", "https://www.us1.calypsoai.app").rstrip("/")
+CALYPSOAI_TOKEN = os.getenv("CALYPSOAI_TOKEN", "").strip()
+CALYPSOAI_PROJECT_ID = os.getenv("CALYPSOAI_PROJECT_ID", "").strip()
+
 
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     session_id: Optional[str] = None
+    guardrails_enabled: bool = True
 
 
 class ChatResponse(BaseModel):
@@ -52,6 +58,7 @@ app = FastAPI(title="GEOINT RAG API", version="1.0.0")
 embedding_model: Optional[SentenceTransformer] = None
 chroma_client = None
 chroma_collection = None
+calypso_client: Optional[CalypsoAI] = None
 
 
 def normalize_value(value: Any) -> str:
@@ -315,12 +322,61 @@ async def query_gemini(prompt: str) -> str:
     return await asyncio.to_thread(invoke_gemini, prompt)
 
 
+def init_calypso_client() -> None:
+    global calypso_client
+
+    if not CALYPSOAI_TOKEN or not CALYPSOAI_PROJECT_ID:
+        logger.warning("CalypsoAI credentials/project are not fully configured; guardrails mode will fail")
+        calypso_client = None
+        return
+
+    calypso_client = CalypsoAI(url=CALYPSOAI_URL, token=CALYPSOAI_TOKEN)
+    logger.info("Configured CalypsoAI guardrails endpoint: %s", CALYPSOAI_URL)
+
+
+def _extract_calypso_text(prompt_result: Any) -> str:
+    try:
+        result = getattr(prompt_result, "result", None)
+        if result is not None:
+            response_text = getattr(result, "response", None)
+            if isinstance(response_text, str) and response_text.strip():
+                return response_text.strip()
+    except Exception:
+        pass
+
+    try:
+        dumped = prompt_result.model_dump()
+        result = dumped.get("result", {}) if isinstance(dumped, dict) else {}
+        response_text = result.get("response") if isinstance(result, dict) else None
+        if isinstance(response_text, str) and response_text.strip():
+            return response_text.strip()
+    except Exception:
+        pass
+
+    return "No response generated."
+
+
+def invoke_calypso(prompt: str) -> str:
+    if calypso_client is None:
+        raise RuntimeError("CalypsoAI client is not configured")
+    if not CALYPSOAI_PROJECT_ID:
+        raise RuntimeError("CALYPSOAI_PROJECT_ID is not configured")
+
+    result = calypso_client.prompts.send(prompt, project=CALYPSOAI_PROJECT_ID)
+    return _extract_calypso_text(result)
+
+
+async def query_calypso(prompt: str) -> str:
+    return await asyncio.to_thread(invoke_calypso, prompt)
+
+
 @app.on_event("startup")
 def startup_event() -> None:
     try:
         if not GEMINI_API_KEY:
-            logger.warning("GEMINI_API_KEY is not configured; /api/chat calls will fail")
+            logger.warning("GEMINI_API_KEY is not configured; fallback (guardrails disabled) mode will fail")
         logger.info("Configured Gemini API endpoint: %s", GEMINI_API_ENDPOINT)
+        init_calypso_client()
         init_vector_store()
     except Exception as exc:
         logger.exception("Startup initialization failed: %s", exc)
@@ -328,7 +384,10 @@ def startup_event() -> None:
 
 @app.get("/api/health")
 def health() -> Dict[str, str]:
-    status = "ok" if chroma_collection is not None and embedding_model is not None and bool(GEMINI_API_KEY) else "degraded"
+    ai_provider_ready = bool(GEMINI_API_KEY) or (
+        calypso_client is not None and bool(CALYPSOAI_PROJECT_ID)
+    )
+    status = "ok" if chroma_collection is not None and embedding_model is not None and ai_provider_ready else "degraded"
     return {"status": status}
 
 
@@ -353,9 +412,13 @@ async def chat(req: ChatRequest) -> ChatResponse:
     prompt = build_prompt(docs, req.message)
 
     try:
-        model_response = await query_gemini(prompt)
+        if req.guardrails_enabled:
+            model_response = await query_calypso(prompt)
+        else:
+            model_response = await query_gemini(prompt)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Google Gemini request failed: {exc}") from exc
+        provider = "F5 AI Gateway Guardrails (CalypsoAI)" if req.guardrails_enabled else "Google Gemini"
+        raise HTTPException(status_code=502, detail=f"{provider} request failed: {exc}") from exc
 
     sources = []
     for meta, doc in zip(metadatas, docs):
