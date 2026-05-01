@@ -1,8 +1,8 @@
+import asyncio
 import json
 import logging
 import os
 import re
-import asyncio
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 from urllib import error, parse, request
@@ -32,6 +32,15 @@ POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "GeointPass!2026")
 CHROMA_HOST = os.getenv("CHROMA_HOST", "chromadb-service")
 CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
 CHROMA_COLLECTION = os.getenv("CHROMA_COLLECTION", "geoint_documents")
+CHROMA_TOP_K = int(os.getenv("CHROMA_TOP_K", "5"))
+CHROMA_RESET_ON_STARTUP = os.getenv("CHROMA_RESET_ON_STARTUP", "true").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
@@ -200,7 +209,7 @@ def fetch_postgis_documents() -> List[Tuple[str, Dict[str, Any]]]:
 def init_vector_store() -> None:
     global embedding_model, chroma_client, chroma_collection
 
-    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+    embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
     chroma_client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
 
     try:
@@ -220,10 +229,11 @@ def init_vector_store() -> None:
     ids = [f"{m['source_table']}-{m['record_id']}" for m in metas]
     embeddings = embedding_model.encode(texts).tolist()
 
-    # Reset collection for deterministic demo behavior.
-    existing = chroma_collection.get(include=[])
-    if existing.get("ids"):
-        chroma_collection.delete(ids=existing["ids"])
+    # Reset collection can be disabled to avoid unnecessary startup ingest churn.
+    if CHROMA_RESET_ON_STARTUP:
+        existing = chroma_collection.get(include=[])
+        if existing.get("ids"):
+            chroma_collection.delete(ids=existing["ids"])
 
     chroma_collection.add(ids=ids, documents=texts, metadatas=metas, embeddings=embeddings)
     logger.info("Ingested %d documents into Chroma", len(ids))
@@ -379,6 +389,23 @@ async def query_calypso(prompt: str) -> str:
     return await asyncio.to_thread(invoke_calypso, prompt)
 
 
+async def embed_query_text(text: str) -> List[float]:
+    if embedding_model is None:
+        raise RuntimeError("Embedding model is not initialized")
+    result = await asyncio.to_thread(embedding_model.encode, [text])
+    return result.tolist()[0]
+
+
+async def query_vector_store(question_embedding: List[float], k: int) -> Dict[str, Any]:
+    if chroma_collection is None:
+        raise RuntimeError("Chroma collection is not initialized")
+    return await asyncio.to_thread(
+        chroma_collection.query,
+        query_embeddings=[question_embedding],
+        n_results=k,
+    )
+
+
 @app.on_event("startup")
 def startup_event() -> None:
     try:
@@ -405,8 +432,8 @@ async def chat(req: ChatRequest) -> ChatResponse:
     if chroma_collection is None or embedding_model is None:
         raise HTTPException(status_code=503, detail="RAG backend is not initialized")
 
-    question_embedding = embedding_model.encode([req.message]).tolist()[0]
-    results = chroma_collection.query(query_embeddings=[question_embedding], n_results=5)
+    question_embedding = await embed_query_text(req.message)
+    results = await query_vector_store(question_embedding, CHROMA_TOP_K)
 
     docs = results.get("documents", [[]])[0]
     metadatas = results.get("metadatas", [[]])[0]
@@ -420,13 +447,18 @@ async def chat(req: ChatRequest) -> ChatResponse:
 
     prompt = build_prompt(docs, req.message)
 
+    use_calypso = req.guardrails_enabled and calypso_client is not None and bool(CALYPSOAI_PROJECT_ID)
+    provider = "F5 AI Gateway Guardrails (CalypsoAI)" if use_calypso else "Google Gemini"
+
+    if req.guardrails_enabled and not use_calypso:
+        logger.warning("Guardrails requested but CalypsoAI is not configured; falling back to Gemini")
+
     try:
-        if req.guardrails_enabled:
+        if use_calypso:
             model_response = await query_calypso(prompt)
         else:
             model_response = await query_gemini(prompt)
     except Exception as exc:
-        provider = "F5 AI Gateway Guardrails (CalypsoAI)" if req.guardrails_enabled else "Google Gemini"
         raise HTTPException(status_code=502, detail=f"{provider} request failed: {exc}") from exc
 
     sources = []
