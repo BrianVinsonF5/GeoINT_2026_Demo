@@ -114,94 +114,49 @@ Optional (for GPU acceleration):
 
 ---
 
-## 4) Internal Docker Registry + Image Push/Pull
+## 4) GitHub Container Registry (GHCR) + Image Push/Pull
 
-This repo now includes an internal registry deployment (`registry:2`) in the
-`geoint-demo` namespace and exposes it through the existing NGINX ingress
-controller:
+This repo now uses GitHub Container Registry (`ghcr.io`) for custom app images.
+The local in-cluster registry manifests have been removed.
 
-- Deployment: `k8s/registry/deployment.yaml`
-- Service: `k8s/registry/service.yaml` (`ClusterIP` on port `5000`)
-- Ingress: `k8s/registry/ingress.yaml` (host `registry.geoint-demo.local`)
-- Storage: `k8s/registry/pvc.yaml`
+### 4.1 Configure pull credentials in Kubernetes
 
-The registry ingress is configured for large Docker layer uploads with:
-- `nginx.ingress.kubernetes.io/proxy-body-size: "0"`
-- `nginx.ingress.kubernetes.io/proxy-request-buffering: "off"`
+`k8s/secrets.yaml` includes `ghcr-pull-secret` (`kubernetes.io/dockerconfigjson`).
+Update placeholders before deploy:
 
-### 4.1 Deploy only the internal registry first
+- `GITHUB_USERNAME`
+- `GITHUB_PAT` (must include `read:packages` for private image pulls)
 
-```bash
-chmod +x deploy.sh
-./deploy.sh --registry-only
-```
-
-Check the registry ingress:
-
-```bash
-kubectl -n geoint-demo get ingress internal-registry-ingress
-```
-
-Use your ingress controller address with this host header / DNS name:
-
-```text
-registry.geoint-demo.local:443
-```
-
-### 4.2 Build, tag, and push app images to the internal registry
-
-```bash
-# Set your registry endpoint
-REGISTRY_HOST=registry.geoint-demo.local
-
-# Frontend image
-docker build -t ${REGISTRY_HOST}/geoint-frontend:1.0.0 ./frontend
-docker push ${REGISTRY_HOST}/geoint-frontend:1.0.0
-
-# RAG API image
-docker build -t ${REGISTRY_HOST}/geoint-rag-api:1.0.0 ./rag-api
-docker push ${REGISTRY_HOST}/geoint-rag-api:1.0.0
-```
-
-### 4.3 Deploy the full stack using images from the internal registry
-
-```bash
-./deploy.sh --registry-host registry.geoint-demo.local:443
-```
-
-`deploy.sh` applies base manifests, deploys the internal registry, and then sets
-image references on `rag-api` and `geoint-frontend` deployments to:
-
-- `registry.geoint-demo.local:443/geoint-rag-api:1.0.0`
-- `registry.geoint-demo.local:443/geoint-frontend:1.0.0`
-
-> Note: This repo now configures TLS on the registry ingress using secret
-> `internal-registry-tls` in `k8s/secrets.yaml`. Replace placeholder cert/key
-> values with a valid cert for `registry.geoint-demo.local` before pushing images.
-
-### 4.4 Configure registry TLS certificate trust
-
-The ingress now terminates TLS for `registry.geoint-demo.local` using
-`internal-registry-tls` in `k8s/secrets.yaml`.
-
-1. Replace `tls.crt` and `tls.key` placeholders in `k8s/secrets.yaml` with a
-   real certificate and key for `registry.geoint-demo.local`.
-2. Apply/update secrets:
+Then apply secrets:
 
 ```bash
 kubectl apply -f k8s/secrets.yaml
 ```
 
-3. Trust that certificate authority (or self-signed cert) on:
-   - your external Docker/Podman build workstation (push)
-   - each Kubernetes node runtime (pull)
+### 4.2 Build and push app images to GHCR
 
-If Docker reports cert errors, install the cert in Docker's trust store for
-`registry.geoint-demo.local:443` and restart Docker.
+```bash
+# optional explicit login
+docker login ghcr.io -u <github-username>
 
-If push fails with `413 Request Entity Too Large`, re-apply
-`k8s/registry/ingress.yaml` and confirm those two NGINX ingress annotations are
-present on `internal-registry-ingress`.
+# frontend
+docker build -t ghcr.io/<owner>/geoint-frontend:1.0.4 ./frontend
+docker push ghcr.io/<owner>/geoint-frontend:1.0.4
+
+# rag api
+docker build -t ghcr.io/<owner>/geoint-rag-api:1.0.4 ./rag-api
+docker push ghcr.io/<owner>/geoint-rag-api:1.0.4
+```
+
+### 4.3 Deploy the full stack using GHCR images
+
+```bash
+chmod +x deploy.sh
+./deploy.sh --ghcr-owner <owner> --github-username <github-username> --github-pat <github-pat>
+```
+
+You can also omit `--github-username/--github-pat` if your local Docker/Podman
+is already logged in to `ghcr.io`.
 
 ---
 
@@ -216,8 +171,10 @@ chmod +x deploy.sh
 
 Optional deploy flags:
 
-- `--registry-only`: deploy only foundational objects + internal registry
-- `--registry-host <host:port>`: update app deployments to pull from registry
+- `--ghcr-owner <owner>`: GitHub owner/org used in image paths
+- `--github-username <username>`: GHCR push auth username
+- `--github-pat <token>`: GHCR push auth token (`write:packages`)
+- `--image-tag <tag>`: image tag override (default in script: `1.0.4`)
 
 Before deploying, set the Gemini API key in `k8s/secrets.yaml` under `gemini-secret`:
 - `GEMINI_API_KEY`
@@ -321,5 +278,5 @@ kubectl delete namespace geoint-demo
 
 This removes all deployments, services, jobs, PVC claims, and policies in the demo namespace.
 
-If you configured a local Docker/Podman insecure registry entry for this demo,
-you may also want to remove it after cleanup.
+If you previously configured a local Docker/Podman insecure registry entry for
+older versions of this demo, you may also want to remove it after cleanup.
