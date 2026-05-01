@@ -1,10 +1,19 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: geoint-nginx-ltm
+  name: geoint-cis-ltm
   namespace: geoint-demo
+  annotations:
+    kubernetes.io/ingress.class: f5
+    cert-manager.io/cluster-issuer: "lab-ca-issuer"
+    virtual-server.f5.com/partition: "Common"
+    virtual-server.f5.com/balance: "round-robin"
 spec:
-  ingressClassName: nginx
+  ingressClassName: f5
+  tls:
+    - hosts:
+        - geoint-ltm.f5demos.com
+      secretName: geoint-ltm-f5demos-com-tls
   rules:
     - host: geoint-ltm.f5demos.com
       http:
@@ -16,20 +25,5 @@ spec:
                 name: frontend-service
                 port:
                   number: 80
----
-apiVersion: cis.f5.com/v1
-kind: IngressLink
-metadata:
-  name: geoint-cis-ltm-ingresslink
-  namespace: geoint-demo
-  annotations:
-    # BIG-IP virtual server address (replace for your lab)
-    virtual-server.f5.com/partition: "Common"
-    virtual-server.f5.com/balance: "round-robin"
-spec:
-  virtualServerAddress: "10.1.10.110"
-  host: geoint-ltm.f5demos.com
-  selector:
-    matchLabels:
-      app: ingresslink
+
 
