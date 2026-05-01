@@ -9,10 +9,14 @@ from urllib import error, parse, request
 
 import chromadb
 import psycopg2
-from calypsoai import CalypsoAI
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sentence_transformers import SentenceTransformer
+
+try:
+    from calypsoai import CalypsoAI
+except ImportError:  # Optional dependency in environments without CalypsoAI SDK.
+    CalypsoAI = None  # type: ignore[assignment]
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -58,7 +62,7 @@ app = FastAPI(title="GEOINT RAG API", version="1.0.0")
 embedding_model: Optional[SentenceTransformer] = None
 chroma_client = None
 chroma_collection = None
-calypso_client: Optional[CalypsoAI] = None
+calypso_client: Optional[Any] = None
 
 
 def normalize_value(value: Any) -> str:
@@ -324,6 +328,11 @@ async def query_gemini(prompt: str) -> str:
 
 def init_calypso_client() -> None:
     global calypso_client
+
+    if CalypsoAI is None:
+        logger.warning("CalypsoAI SDK is not installed; guardrails mode will be unavailable")
+        calypso_client = None
+        return
 
     if not CALYPSOAI_TOKEN or not CALYPSOAI_PROJECT_ID:
         logger.warning("CalypsoAI credentials/project are not fully configured; guardrails mode will fail")

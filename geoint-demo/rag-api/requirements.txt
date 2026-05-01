@@ -6,4 +6,4 @@ uvicorn==0.30.5
 psycopg2-binary==2.9.9
 sentence-transformers==3.0.1
 pydantic==2.8.2
-calypsoai
+calypsoai @ https://docs.aisecurity.f5.com/calypsoai-2.82.0-py3-none-any.whl
