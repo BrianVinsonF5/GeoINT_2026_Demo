@@ -47,3 +47,5 @@ spec:
     - path: /
       service: frontend-service
       servicePort: 80
+
+---
