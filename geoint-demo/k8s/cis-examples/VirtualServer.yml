@@ -4,7 +4,7 @@ metadata:
   name: geoint-ltm-tls
   namespace: geoint-demo
 spec:
-  secretName: geoint-ltm-f5demos-com-tls    # secret cert-manager will create/renew
+  secretName: geoint-ltm-f5demos-com-tls
   issuerRef:
     name: lab-ca-issuer
     kind: ClusterIssuer
@@ -30,6 +30,23 @@ spec:
 ---
 
 apiVersion: cis.f5.com/v1
+kind: Policy
+metadata:
+  name: geoint-cis-policy
+  namespace: geoint-demo
+  labels:
+    f5cr: "true"
+spec:
+  l7Policies:
+    waf: /Common/geoint # ASM policy — must pre-exist on BIG-IP
+  profiles:
+    logProfiles:
+      - /Common/geoint_asm_logging     # WAF logging profile — must pre-exist on BIG-IP
+  iRules:
+    secure: /Common/MyApiDiscoveryiRule       # iRule applied to the HTTPS (secure) VIP
+---
+
+apiVersion: cis.f5.com/v1
 kind: VirtualServer
 metadata:
   name: geoint-cis-ltm
@@ -43,9 +60,8 @@ spec:
   virtualServerAddress: "10.1.10.110"
   partition: f5-bigip-ctlr
   tlsProfileName: geoint-cis-ltm-tls
+  policyName: geoint-cis-policy                 # References the Policy CRD above
   pools:
     - path: /
       service: frontend-service
       servicePort: 80
-
----
