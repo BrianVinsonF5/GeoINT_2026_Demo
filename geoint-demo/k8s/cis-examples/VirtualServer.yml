@@ -1,0 +1,49 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: geoint-ltm-tls
+  namespace: geoint-demo
+spec:
+  secretName: geoint-ltm-f5demos-com-tls    # secret cert-manager will create/renew
+  issuerRef:
+    name: lab-ca-issuer
+    kind: ClusterIssuer
+  commonName: geoint-ltm.f5demos.com
+  dnsNames:
+    - geoint-ltm.f5demos.com
+---
+
+apiVersion: cis.f5.com/v1
+kind: TLSProfile
+metadata:
+  name: geoint-cis-ltm-tls
+  namespace: geoint-demo
+  labels:
+    f5cr: "true"
+spec:
+  hosts:
+    - geoint-ltm.f5demos.com
+  tls:
+    termination: edge
+    clientSSL: geoint-ltm-f5demos-com-tls
+    reference: secret
+---
+
+apiVersion: cis.f5.com/v1
+kind: VirtualServer
+metadata:
+  name: geoint-cis-ltm
+  namespace: geoint-demo
+  labels:
+    f5cr: "true"
+  annotations:
+    virtual-server.f5.com/balance: "round-robin"
+spec:
+  host: geoint-ltm.f5demos.com
+  virtualServerAddress: "10.1.10.110"
+  partition: f5-bigip-ctlr
+  tlsProfileName: geoint-cis-ltm-tls
+  pools:
+    - path: /
+      service: frontend-service
+      servicePort: 80
