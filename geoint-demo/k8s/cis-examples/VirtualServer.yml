@@ -12,7 +12,6 @@ spec:
   dnsNames:
     - geoint-ltm.f5demos.com
 ---
-
 apiVersion: cis.f5.com/v1
 kind: TLSProfile
 metadata:
@@ -25,14 +24,9 @@ spec:
     - geoint-ltm.f5demos.com
   tls:
     termination: edge
-    # Switch to bigip reference so CIS uses a pre-existing BIG-IP client-ssl
-    # profile that has /Common/lab-ca set as trustedCertificateAuthority
-    # and advertisedCertificateAuthority — those fields must be configured
-    # directly on the BIG-IP profile, not via CIS CRD parameters.
-    clientSSL: /Common/geoint-clientssl   # Pre-existing BIG-IP client-ssl profile with lab-ca configured
+    clientSSL: /Common/geoint-clientssl
     reference: bigip
 ---
-
 apiVersion: cis.f5.com/v1
 kind: Policy
 metadata:
@@ -42,16 +36,13 @@ metadata:
     f5cr: "true"
 spec:
   l7Policies:
-    waf: /Common/geoint                       # ASM policy — must pre-exist on BIG-IP
+    waf: /Common/geoint
   profiles:
     logProfiles:
-      - /Common/geoint_asm_logging            # WAF logging profile — must pre-exist on BIG-IP
-  iRules:
-    secure: /Common/MyApiDiscoveryiRule       # iRule applied to the HTTPS (secure) VIP
+      - /Common/geoint_asm_logging
   l3Policies:
     botDefense: /Common/geoint
 ---
-
 apiVersion: cis.f5.com/v1
 kind: VirtualServer
 metadata:
@@ -59,18 +50,17 @@ metadata:
   namespace: geoint-demo
   labels:
     f5cr: "true"
-  annotations:
-    virtual-server.f5.com/balance: "round-robin"
 spec:
   host: geoint-ltm.f5demos.com
   virtualServerAddress: "10.1.10.110"
   partition: f5-bigip-ctlr
   tlsProfileName: geoint-cis-ltm-tls
   policyName: geoint-cis-policy
-  profiles:
-    access: /Common/geointAP                  # APM Access Profile — must pre-exist on BIG-IP
+  profileAccess: /Common/geointAP
+  iRules:
+    - /Common/MyApiDiscoveryiRule
+    - /Common/rbaciRule
   pools:
     - path: /
-      service: frontend-"
-  partition: f5-bigservice
+      service: frontend
       servicePort: 80
