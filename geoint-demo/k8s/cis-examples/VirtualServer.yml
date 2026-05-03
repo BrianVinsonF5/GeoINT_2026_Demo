@@ -27,6 +27,9 @@ spec:
     termination: edge
     clientSSL: geoint-ltm-f5demos-com-tls
     reference: secret
+    clientSSLParams:
+      trustedCertificateAuthority: /Common/lab-ca
+      advertisedCertificateAuthority: /Common/lab-ca
 ---
 
 apiVersion: cis.f5.com/v1
@@ -42,8 +45,12 @@ spec:
   profiles:
     logProfiles:
       - /Common/geoint_asm_logging     # WAF logging profile — must pre-exist on BIG-IP
+    accessProfiles:
+      - name: /Common/geointAP         # APM Access Profile — must pre-exist on BIG-IP
   iRules:
     secure: /Common/MyApiDiscoveryiRule       # iRule applied to the HTTPS (secure) VIP
+  l3Policies:
+    botDefense: /Common/geoint
 ---
 
 apiVersion: cis.f5.com/v1
