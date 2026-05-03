@@ -280,3 +280,30 @@ This removes all deployments, services, jobs, PVC claims, and policies in the de
 
 If you previously configured a local Docker/Podman insecure registry entry for
 older versions of this demo, you may also want to remove it after cleanup.
+
+---
+
+## 11) Changelog (latest)
+
+### 2026-05-03 — RBAC enforced via BIG-IP APM `accessLevel` cookie
+
+- Added server-side role-based access control in `rag-api/app.py` keyed from
+  `accessLevel` cookie values `Group1` / `Group2`.
+- Added `/api/session` response envelope with `accessLevel` + `allowedLayers`
+  for frontend capability discovery.
+- Enforced layer authorization for GeoServer proxy endpoints
+  (`/api/geoserver/ows`, `/api/geoserver/wms`) with explicit 403 responses and
+  deny logging for unauthorized layer requests.
+- Enforced chat/RAG authorization:
+  - Group-scoped Chroma metadata filtering (`source_table` allow-list)
+  - Group-specific prompt guardrails
+  - Defence-in-depth output sanitization for Group2 restricted topics
+- Updated frontend (`frontend/src/app.js`) to:
+  - Fetch `/api/session` on load
+  - Render only authorized map layers and toggles
+  - Gate WFS feature lookups by `allowedLayers`
+  - Display access scope in layer panel and chat badge
+- Added integration-style tests in `rag-api/test_rbac_integration.py` covering:
+  - Group1 access to all layers
+  - Group2 denial on restricted layer
+  - Group2 chat restriction and filtered RAG context

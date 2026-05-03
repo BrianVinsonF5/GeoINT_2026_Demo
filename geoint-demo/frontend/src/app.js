@@ -1,71 +1,44 @@
-/* global ol */
+const LAYER_DEFS = {
+  military_installations: {
+    title: "Military Installations",
+    geoserverLayer: "geoint:military_installations",
+  },
+  satellite_imagery_catalog: {
+    title: "Satellite Imagery Catalog",
+    geoserverLayer: "geoint:satellite_imagery_catalog",
+  },
+  geoint_reports: {
+    title: "GEOINT Reports",
+    geoserverLayer: "geoint:geoint_reports",
+  },
+};
 
-const mapCenter = ol.proj.fromLonLat([0, 20]);
+const state = {
+  accessLevel: null,
+  allowedLayers: [],
+  layersByName: {},
+  map: null,
+  guardrailsEnabled: true,
+};
 
-const osmLayer = new ol.layer.Tile({
-  source: new ol.source.OSM(),
-  visible: true,
-});
-
-const installationsLayer = new ol.layer.Tile({
-  source: new ol.source.TileWMS({
-    url: '/geoserver/geoint/wms',
-    params: { LAYERS: 'geoint:military_installations', TILED: true },
-    serverType: 'geoserver',
-    transition: 0,
-  }),
-  visible: true,
-});
-
-const imageryLayer = new ol.layer.Tile({
-  source: new ol.source.TileWMS({
-    url: '/geoserver/geoint/wms',
-    params: { LAYERS: 'geoint:satellite_imagery_catalog', TILED: true },
-    serverType: 'geoserver',
-    transition: 0,
-  }),
-  visible: true,
-});
-
-const reportsLayer = new ol.layer.Tile({
-  source: new ol.source.TileWMS({
-    url: '/geoserver/geoint/wms',
-    params: { LAYERS: 'geoint:geoint_reports', TILED: true },
-    serverType: 'geoserver',
-    transition: 0,
-  }),
-  visible: true,
-});
-
-const markerSource = new ol.source.Vector();
-const markerLayer = new ol.layer.Vector({
-  source: markerSource,
-  style: new ol.style.Style({
-    image: new ol.style.Circle({
-      radius: 6,
-      fill: new ol.style.Fill({ color: '#e94560' }),
-      stroke: new ol.style.Stroke({ color: '#ffffff', width: 2 }),
-    }),
-  }),
-});
-
-const popupContainer = document.getElementById('popup');
-const popupContent = document.getElementById('popup-content');
-const popupCloser = document.getElementById('popup-closer');
+const popupContainer = document.getElementById("popup");
+const popupContent = document.getElementById("popup-content");
+const popupCloser = document.getElementById("popup-closer");
+const layerControls = document.getElementById("layer-controls");
+const accessScope = document.getElementById("access-scope");
+const chatScopeBadge = document.getElementById("chat-scope-badge");
+const chatMessages = document.getElementById("chat-messages");
+const chatInput = document.getElementById("chat-input");
+const chatSend = document.getElementById("chat-send");
+const guardrailsToggle = document.getElementById("guardrails-toggle");
 
 const overlay = new ol.Overlay({
   element: popupContainer,
-  autoPan: { animation: { duration: 250 } },
-});
-
-const map = new ol.Map({
-  target: 'map',
-  layers: [osmLayer, imageryLayer, reportsLayer, installationsLayer, markerLayer],
-  overlays: [overlay],
-  view: new ol.View({
-    center: mapCenter,
-    zoom: 3,
-  }),
+  autoPan: {
+    animation: {
+      duration: 250,
+    },
+  },
 });
 
 popupCloser.onclick = function () {
@@ -74,165 +47,258 @@ popupCloser.onclick = function () {
   return false;
 };
 
-function escapeHtml(str) {
-  return String(str)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-function formatFeatureProperties(properties) {
-  const entries = Object.entries(properties)
-    .filter(([k]) => k !== 'bbox' && k !== 'geometry')
-    .map(([k, v]) => `<div><strong>${escapeHtml(k)}:</strong> ${escapeHtml(v ?? '')}</div>`)
-    .join('');
-  return entries || '<em>No attributes found.</em>';
-}
-
-map.on('singleclick', async (evt) => {
-  const [lon, lat] = ol.proj.toLonLat(evt.coordinate);
-  const url = `/geoserver/geoint/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=geoint:military_installations,geoint:satellite_imagery_catalog,geoint:geoint_reports&outputFormat=application/json&CQL_FILTER=INTERSECTS(geometry,POINT(${lon} ${lat}));INTERSECTS(footprint,POINT(${lon} ${lat}));INTERSECTS(area_of_interest,POINT(${lon} ${lat}))`;
-
-  try {
-    const resp = await fetch(url);
-    const data = await resp.json();
-    if (!data.features || data.features.length === 0) {
-      overlay.setPosition(undefined);
-      return;
-    }
-
-    const topFeature = data.features[0];
-    const title = `<div><strong>${escapeHtml(topFeature.id || 'Feature')}</strong></div>`;
-    popupContent.innerHTML = title + formatFeatureProperties(topFeature.properties || {});
-    overlay.setPosition(evt.coordinate);
-  } catch (err) {
-    console.error('WFS feature query failed:', err);
-  }
-});
-
-document.getElementById('layer-installations').addEventListener('change', (e) => {
-  installationsLayer.setVisible(e.target.checked);
-});
-document.getElementById('layer-imagery').addEventListener('change', (e) => {
-  imageryLayer.setVisible(e.target.checked);
-});
-document.getElementById('layer-reports').addEventListener('change', (e) => {
-  reportsLayer.setVisible(e.target.checked);
-});
-
-const chatMessages = document.getElementById('chat-messages');
-const chatInput = document.getElementById('chat-input');
-const chatSend = document.getElementById('chat-send');
-const guardrailsToggle = document.getElementById('guardrails-toggle');
-let guardrailsEnabled = true;
-
-function updateGuardrailsToggle() {
-  if (!guardrailsToggle) return;
-  guardrailsToggle.textContent = guardrailsEnabled
-    ? 'AI Gateway: Guardrails Enabled'
-    : 'AI Gateway: Guardrails Disabled';
-  guardrailsToggle.classList.toggle('enabled', guardrailsEnabled);
-  guardrailsToggle.classList.toggle('disabled', !guardrailsEnabled);
-  guardrailsToggle.setAttribute('aria-pressed', String(guardrailsEnabled));
-}
-
-if (guardrailsToggle) {
-  updateGuardrailsToggle();
-  guardrailsToggle.addEventListener('click', () => {
-    guardrailsEnabled = !guardrailsEnabled;
-    updateGuardrailsToggle();
+async function fetchSession() {
+  const res = await fetch("/api/session", {
+    method: "GET",
+    credentials: "include",
+    headers: { Accept: "application/json" },
   });
-}
 
-function addMessage(text, role = 'assistant') {
-  const el = document.createElement('div');
-  el.className = `msg ${role}`;
-  el.textContent = text;
-  chatMessages.appendChild(el);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-function extractCoordinatesFromText(text) {
-  const coords = [];
-  const re = /\[\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\]/g;
-  let match;
-  while ((match = re.exec(text)) !== null) {
-    const lat = parseFloat(match[1]);
-    const lon = parseFloat(match[2]);
-    if (!Number.isNaN(lat) && !Number.isNaN(lon)) {
-      coords.push([lat, lon]);
-    }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || body.message || `Session request failed (${res.status})`);
   }
-  return coords;
+
+  return res.json();
 }
 
-function zoomToCoordinates(coords) {
-  if (!coords || coords.length === 0) return;
+function formatLayerName(name) {
+  return (LAYER_DEFS[name] && LAYER_DEFS[name].title) || name;
+}
 
-  markerSource.clear();
-  const points = coords.map(([lat, lon]) => {
-    const feature = new ol.Feature({
-      geometry: new ol.geom.Point(ol.proj.fromLonLat([lon, lat])),
+function updateScopeUi() {
+  const humanList = state.allowedLayers.map(formatLayerName).join(", ") || "No layers";
+  accessScope.textContent = `You have access to: ${humanList}`;
+  chatScopeBadge.textContent = `Scope: ${humanList}`;
+}
+
+function buildLayerControls() {
+  layerControls.innerHTML = "";
+
+  state.allowedLayers.forEach((layerName) => {
+    if (!state.layersByName[layerName]) return;
+
+    const wrapper = document.createElement("label");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = true;
+    checkbox.addEventListener("change", () => {
+      state.layersByName[layerName].setVisible(checkbox.checked);
     });
-    markerSource.addFeature(feature);
-    return feature.getGeometry().getCoordinates();
+
+    const span = document.createElement("span");
+    span.textContent = ` ${formatLayerName(layerName)}`;
+
+    wrapper.appendChild(checkbox);
+    wrapper.appendChild(span);
+    layerControls.appendChild(wrapper);
+  });
+}
+
+function createWmsLayer(layerName) {
+  const layerDef = LAYER_DEFS[layerName];
+  return new ol.layer.Tile({
+    visible: true,
+    source: new ol.source.TileWMS({
+      url: "/api/geoserver/wms",
+      params: {
+        LAYERS: layerDef.geoserverLayer,
+        TILED: true,
+      },
+      serverType: "geoserver",
+      transition: 0,
+    }),
+    properties: {
+      layerName,
+      title: layerDef.title,
+    },
+  });
+}
+
+function showFeaturePopup(coord, layerName, feature) {
+  const properties = feature.properties || {};
+  const prettyProps = Object.entries(properties)
+    .filter(([k]) => k !== "geometry")
+    .map(([k, v]) => `<div><strong>${k}:</strong> ${String(v)}</div>`)
+    .join("");
+
+  popupContent.innerHTML = `
+    <div><strong>Layer:</strong> ${formatLayerName(layerName)}</div>
+    ${prettyProps || "<div>No attributes available</div>"}
+  `;
+  overlay.setPosition(coord);
+}
+
+async function fetchNearestFeature(layerName, lon, lat) {
+  if (!state.allowedLayers.includes(layerName)) {
+    return null; // defence-in-depth: never query restricted layers from UI.
+  }
+
+  const delta = 0.15;
+  const bbox = `${lon - delta},${lat - delta},${lon + delta},${lat + delta},EPSG:4326`;
+  const params = new URLSearchParams({
+    service: "WFS",
+    version: "1.1.0",
+    request: "GetFeature",
+    typeName: `geoint:${layerName}`,
+    outputFormat: "application/json",
+    srsName: "EPSG:4326",
+    bbox,
+    count: "1",
   });
 
-  const extent = ol.extent.boundingExtent(points);
-  map.getView().fit(extent, { maxZoom: 8, duration: 800, padding: [80, 80, 80, 80] });
+  const res = await fetch(`/api/geoserver/ows?${params.toString()}`, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
 
-  // Clear temporary markers after 20 seconds for cleaner demo UX.
-  setTimeout(() => markerSource.clear(), 20000);
+  if (!res.ok) {
+    return null;
+  }
+
+  const data = await res.json().catch(() => null);
+  if (!data || !Array.isArray(data.features) || data.features.length === 0) {
+    return null;
+  }
+  return data.features[0];
+}
+
+function getTopVisibleAllowedLayerName() {
+  for (let i = state.allowedLayers.length - 1; i >= 0; i -= 1) {
+    const name = state.allowedLayers[i];
+    const layer = state.layersByName[name];
+    if (layer && layer.getVisible()) {
+      return name;
+    }
+  }
+  return null;
+}
+
+function addChatMessage(role, text) {
+  const node = document.createElement("div");
+  node.className = `msg ${role}`;
+  node.textContent = text;
+  chatMessages.appendChild(node);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
 async function sendChat() {
   const message = chatInput.value.trim();
   if (!message) return;
 
-  addMessage(message, 'user');
-  chatInput.value = '';
+  addChatMessage("user", message);
+  chatInput.value = "";
 
   try {
-    const resp = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
       body: JSON.stringify({
         message,
-        guardrails_enabled: guardrailsEnabled,
+        guardrails_enabled: state.guardrailsEnabled,
       }),
     });
 
-    if (!resp.ok) {
-      const text = await resp.text();
-      throw new Error(`API error ${resp.status}: ${text}`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(body.detail || `Chat request failed (${res.status})`);
     }
 
-    const data = await resp.json();
-    const responseText = data.response || 'No response from assistant.';
-    addMessage(responseText, 'assistant');
-
-    const coords = (data.coordinates && data.coordinates.length > 0)
-      ? data.coordinates
-      : extractCoordinatesFromText(responseText);
-    zoomToCoordinates(coords);
+    addChatMessage("assistant", body.response || "No response generated.");
   } catch (err) {
-    console.error(err);
-    addMessage(`Error contacting AI service: ${err.message}`, 'assistant');
+    addChatMessage("assistant", `Error: ${err.message}`);
   }
 }
 
-chatSend.addEventListener('click', sendChat);
-chatInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') sendChat();
-});
-
-document.querySelectorAll('.chip').forEach((chip) => {
-  chip.addEventListener('click', () => {
-    chatInput.value = chip.textContent;
-    sendChat();
+function bindChatUi() {
+  chatSend.addEventListener("click", sendChat);
+  chatInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      sendChat();
+    }
   });
-});
 
-addMessage('GEOINT assistant online. Ask a question to begin analysis.', 'assistant');
+  document.querySelectorAll(".chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      chatInput.value = chip.textContent.trim();
+      sendChat();
+    });
+  });
+
+  guardrailsToggle.addEventListener("click", () => {
+    state.guardrailsEnabled = !state.guardrailsEnabled;
+    guardrailsToggle.classList.toggle("enabled", state.guardrailsEnabled);
+    guardrailsToggle.classList.toggle("disabled", !state.guardrailsEnabled);
+    guardrailsToggle.textContent = state.guardrailsEnabled
+      ? "AI Gateway: Guardrails Enabled"
+      : "AI Gateway: Guardrails Disabled";
+  });
+}
+
+function initMap() {
+  const baseLayer = new ol.layer.Tile({
+    source: new ol.source.OSM(),
+  });
+
+  const layers = [baseLayer];
+
+  state.allowedLayers.forEach((layerName) => {
+    if (!LAYER_DEFS[layerName]) return;
+    const layer = createWmsLayer(layerName);
+    state.layersByName[layerName] = layer;
+    layers.push(layer);
+  });
+
+  state.map = new ol.Map({
+    target: "map",
+    layers,
+    overlays: [overlay],
+    view: new ol.View({
+      center: ol.proj.fromLonLat([10, 25]),
+      zoom: 2,
+    }),
+  });
+
+  state.map.on("singleclick", async (evt) => {
+    const layerName = getTopVisibleAllowedLayerName();
+    if (!layerName || !state.allowedLayers.includes(layerName)) {
+      return;
+    }
+
+    const [lon, lat] = ol.proj.toLonLat(evt.coordinate);
+    const feature = await fetchNearestFeature(layerName, lon, lat);
+    if (!feature) {
+      overlay.setPosition(undefined);
+      return;
+    }
+    showFeaturePopup(evt.coordinate, layerName, feature);
+  });
+}
+
+async function bootstrap() {
+  try {
+    const session = await fetchSession();
+    state.accessLevel = session.accessLevel;
+    state.allowedLayers = Array.isArray(session.allowedLayers) ? session.allowedLayers : [];
+
+    if (state.allowedLayers.length === 0) {
+      throw new Error("No authorized layers available for this session.");
+    }
+
+    updateScopeUi();
+    initMap();
+    buildLayerControls();
+    bindChatUi();
+    addChatMessage("assistant", `Session established for ${state.accessLevel}.`);
+  } catch (err) {
+    accessScope.textContent = `Access denied: ${err.message}`;
+    chatScopeBadge.textContent = "Scope unavailable";
+    addChatMessage("assistant", `Access denied: ${err.message}`);
+  }
+}
+
+bootstrap();

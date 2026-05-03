@@ -110,6 +110,22 @@ body {
   color: var(--text);
 }
 
+#layer-controls {
+  display: grid;
+  gap: 6px;
+}
+
+.access-scope {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid rgba(233, 69, 96, 0.35);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  background: rgba(15, 52, 96, 0.35);
+}
+
 .legend {
   margin-top: 20px;
   padding: 12px;
@@ -148,8 +164,20 @@ body {
 }
 
 .chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-weight: 600;
   color: var(--muted);
+}
+
+.chat-scope-badge {
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  border: 1px solid rgba(233, 69, 96, 0.35);
+  border-radius: 999px;
+  color: #c7f9d8;
+  background: rgba(15, 52, 96, 0.65);
 }
 
 .chat-messages {

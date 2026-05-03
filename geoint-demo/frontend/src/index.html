@@ -24,9 +24,8 @@
     <main class="content-grid">
       <aside class="left-panel">
         <h2>Layer Control</h2>
-        <label><input type="checkbox" id="layer-installations" checked /> Military Installations</label>
-        <label><input type="checkbox" id="layer-imagery" checked /> Satellite Imagery Catalog</label>
-        <label><input type="checkbox" id="layer-reports" checked /> GEOINT Reports</label>
+        <div id="layer-controls"></div>
+        <div id="access-scope" class="access-scope"></div>
 
         <div class="legend">
           <h3>Legend</h3>
@@ -46,7 +45,10 @@
     </main>
 
     <section class="chat-panel">
-      <div class="chat-header">AI Assistant</div>
+      <div class="chat-header">
+        <span>AI Assistant</span>
+        <span id="chat-scope-badge" class="chat-scope-badge"></span>
+      </div>
       <div id="chat-messages" class="chat-messages"></div>
       <div class="chips">
         <button class="chip">Show all satellite imagery with &lt;30% cloud cover</button>
