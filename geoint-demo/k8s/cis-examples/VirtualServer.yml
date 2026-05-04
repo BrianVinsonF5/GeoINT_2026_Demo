@@ -62,5 +62,5 @@ spec:
     - /Common/rbaciRule
   pools:
     - path: /
-      service: frontend
+      service: frontend-service
       servicePort: 80
