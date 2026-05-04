@@ -9,7 +9,7 @@ from urllib import error, parse, request
 
 import chromadb
 import psycopg2
-from fastapi import Cookie, FastAPI, HTTPException
+from fastapi import Cookie, FastAPI, HTTPException, Request as FastAPIRequest, Response
 from pydantic import BaseModel, Field
 from sentence_transformers import SentenceTransformer
 
@@ -51,6 +51,7 @@ GEMINI_API_ENDPOINT = os.getenv(
 CALYPSOAI_URL = os.getenv("CALYPSOAI_URL", "https://www.us1.calypsoai.app").rstrip("/")
 CALYPSOAI_TOKEN = os.getenv("CALYPSOAI_TOKEN", "").strip()
 CALYPSOAI_PROJECT_ID = os.getenv("CALYPSOAI_PROJECT_ID", "").strip()
+GEOSERVER_INTERNAL_BASE_URL = os.getenv("GEOSERVER_INTERNAL_BASE_URL", "http://geoserver-service:8080/geoserver").rstrip("/")
 
 
 
@@ -104,6 +105,63 @@ def parse_wkt_bbox_coords(wkt: str) -> Optional[List[float]]:
     center_lon = (min(xs) + max(xs)) / 2.0
     center_lat = (min(ys) + max(ys)) / 2.0
     return [round(center_lat, 6), round(center_lon, 6)]
+
+
+def normalize_layer_name(raw_layer: str) -> str:
+    if not raw_layer:
+        return ""
+    return raw_layer.split(":", 1)[-1].strip()
+
+
+def extract_requested_layers(query_params: Dict[str, str]) -> List[str]:
+    requested: List[str] = []
+    for key in ("LAYERS", "layers", "typeName", "typename"):
+        raw_value = query_params.get(key)
+        if not raw_value:
+            continue
+        for token in raw_value.split(","):
+            normalized = normalize_layer_name(token)
+            if normalized:
+                requested.append(normalized)
+
+    # Keep order, remove duplicates.
+    return list(dict.fromkeys(requested))
+
+
+def find_restricted_layers(access_level: Optional[str], requested_layers: List[str]) -> List[str]:
+    allowed = set(ACCESS_LEVEL_LAYER_MAP.get(access_level or "", []))
+    return [layer for layer in requested_layers if layer not in allowed]
+
+
+def proxy_geoserver_get(upstream_url: str, raw_query: str) -> Response:
+    target_url = f"{upstream_url}?{raw_query}" if raw_query else upstream_url
+    upstream_req = request.Request(
+        url=target_url,
+        method="GET",
+        headers={"accept": "*/*"},
+    )
+
+    try:
+        with request.urlopen(upstream_req, timeout=90) as upstream_resp:
+            content = upstream_resp.read()
+            content_type = upstream_resp.headers.get("Content-Type", "application/octet-stream")
+            return Response(
+                content=content,
+                status_code=getattr(upstream_resp, "status", 200),
+                headers={"Content-Type": content_type},
+            )
+    except error.HTTPError as exc:
+        content = exc.read()
+        content_type = "application/json"
+        if getattr(exc, "headers", None):
+            content_type = exc.headers.get("Content-Type", content_type)
+        return Response(
+            content=content,
+            status_code=exc.code,
+            headers={"Content-Type": content_type},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"GeoServer proxy request failed: {exc}") from exc
 
 
 def fetch_postgis_documents() -> List[Tuple[str, Dict[str, Any]]]:
@@ -456,6 +514,60 @@ def session(
         "username": resolved_username,
         "allowedLayers": allowed_layers,
     }
+
+
+@app.get("/api/geoserver/wms")
+def geoserver_wms_proxy(
+    req: FastAPIRequest,
+    accessLevel: Optional[str] = Cookie(default=None),
+) -> Response:
+    if not accessLevel:
+        raise HTTPException(status_code=401, detail="Missing accessLevel cookie")
+
+    query_params = {k: v for k, v in req.query_params.items()}
+    requested_layers = extract_requested_layers(query_params)
+    restricted_layers = find_restricted_layers(accessLevel, requested_layers)
+    if restricted_layers:
+        return Response(
+            content=json.dumps(
+                {
+                    "message": "One or more requested layers are restricted for this access level.",
+                    "restrictedLayers": restricted_layers,
+                }
+            ).encode("utf-8"),
+            status_code=403,
+            headers={"Content-Type": "application/json"},
+        )
+
+    upstream_url = f"{GEOSERVER_INTERNAL_BASE_URL}/geoint/wms"
+    return proxy_geoserver_get(upstream_url=upstream_url, raw_query=req.url.query)
+
+
+@app.get("/api/geoserver/ows")
+def geoserver_ows_proxy(
+    req: FastAPIRequest,
+    accessLevel: Optional[str] = Cookie(default=None),
+) -> Response:
+    if not accessLevel:
+        raise HTTPException(status_code=401, detail="Missing accessLevel cookie")
+
+    query_params = {k: v for k, v in req.query_params.items()}
+    requested_layers = extract_requested_layers(query_params)
+    restricted_layers = find_restricted_layers(accessLevel, requested_layers)
+    if restricted_layers:
+        return Response(
+            content=json.dumps(
+                {
+                    "message": "One or more requested layers are restricted for this access level.",
+                    "restrictedLayers": restricted_layers,
+                }
+            ).encode("utf-8"),
+            status_code=403,
+            headers={"Content-Type": "application/json"},
+        )
+
+    upstream_url = f"{GEOSERVER_INTERNAL_BASE_URL}/geoint/ows"
+    return proxy_geoserver_get(upstream_url=upstream_url, raw_query=req.url.query)
 
 
 @app.post("/api/chat", response_model=ChatResponse)
