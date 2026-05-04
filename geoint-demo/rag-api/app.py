@@ -9,7 +9,7 @@ from urllib import error, parse, request
 
 import chromadb
 import psycopg2
-from fastapi import FastAPI, HTTPException
+from fastapi import Cookie, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sentence_transformers import SentenceTransformer
 
@@ -72,6 +72,12 @@ embedding_model: Optional[SentenceTransformer] = None
 chroma_client = None
 chroma_collection = None
 calypso_client: Optional[Any] = None
+
+
+ACCESS_LEVEL_LAYER_MAP: Dict[str, List[str]] = {
+    "Group1": ["military_installations", "satellite_imagery_catalog", "geoint_reports"],
+    "Group2": ["satellite_imagery_catalog"],
+}
 
 
 def normalize_value(value: Any) -> str:
@@ -425,6 +431,31 @@ def health() -> Dict[str, str]:
     )
     status = "ok" if chroma_collection is not None and embedding_model is not None and ai_provider_ready else "degraded"
     return {"status": status}
+
+
+@app.get("/api/session")
+def session(
+    accessLevel: Optional[str] = Cookie(default=None),
+    username: Optional[str] = Cookie(default=None),
+    user: Optional[str] = Cookie(default=None),
+    preferred_username: Optional[str] = Cookie(default=None),
+    group: Optional[str] = Cookie(default=None),
+    groupName: Optional[str] = Cookie(default=None),
+) -> Dict[str, Any]:
+    if not accessLevel:
+        raise HTTPException(status_code=401, detail="Missing accessLevel cookie")
+
+    allowed_layers = ACCESS_LEVEL_LAYER_MAP.get(accessLevel, [])
+    resolved_username = username or user or preferred_username or "Unknown"
+    resolved_group = group or groupName or accessLevel
+
+    return {
+        "authenticated": True,
+        "accessLevel": accessLevel,
+        "group": resolved_group,
+        "username": resolved_username,
+        "allowedLayers": allowed_layers,
+    }
 
 
 @app.post("/api/chat", response_model=ChatResponse)
