@@ -9,11 +9,13 @@ const LAYER_DEFS = {
   },
   geoint_reports: {
     title: "GEOINT Reports",
-    geoserverLayer: "geoint:geoint_reports",
+    geoserverLayer: "geoint:geoint_rep
   },
 };
 
 const state = {
+  username: null,
+  group: null,
   accessLevel: null,
   allowedLayers: [],
   layersByName: {},
@@ -27,6 +29,7 @@ const popupCloser = document.getElementById("popup-closer");
 const layerControls = document.getElementById("layer-controls");
 const accessScope = document.getElementById("access-scope");
 const chatScopeBadge = document.getElementById("chat-scope-badge");
+const userIdentity = document.getElementById("user-identity");
 const chatMessages = document.getElementById("chat-messages");
 const chatInput = document.getElementById("chat-input");
 const chatSend = document.getElementById("chat-send");
@@ -70,6 +73,13 @@ function updateScopeUi() {
   const humanList = state.allowedLayers.map(formatLayerName).join(", ") || "No layers";
   accessScope.textContent = `You have access to: ${humanList}`;
   chatScopeBadge.textContent = `Scope: ${humanList}`;
+}
+
+function updateUserIdentityUi() {
+  if (!userIdentity) return;
+  const username = state.username || "Unknown";
+  const group = state.group || state.accessLevel || "Unknown";
+  userIdentity.textContent = `User: ${username} | Group: ${group}`;
 }
 
 function buildLayerControls() {
@@ -282,6 +292,8 @@ function initMap() {
 async function bootstrap() {
   try {
     const session = await fetchSession();
+    state.username = session.username || session.user || session.userName || "Unknown";
+    state.group = session.group || session.accessLevel || "Unknown";
     state.accessLevel = session.accessLevel;
     state.allowedLayers = Array.isArray(session.allowedLayers) ? session.allowedLayers : [];
 
@@ -289,13 +301,17 @@ async function bootstrap() {
       throw new Error("No authorized layers available for this session.");
     }
 
+    updateUserIdentityUi();
     updateScopeUi();
     initMap();
     buildLayerControls();
     bindChatUi();
-    addChatMessage("assistant", `Session established for ${state.accessLevel}.`);
+    addChatMessage("assistant", `Session established for ${state.username} (${state.group}).`);
   } catch (err) {
     accessScope.textContent = `Access denied: ${err.message}`;
+    if (userIdentity) {
+      userIdentity.textContent = "User: Unknown | Group: Unknown";
+    }
     chatScopeBadge.textContent = "Scope unavailable";
     addChatMessage("assistant", `Access denied: ${err.message}`);
   }
