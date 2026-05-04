@@ -9,8 +9,13 @@ const LAYER_DEFS = {
   },
   geoint_reports: {
     title: "GEOINT Reports",
-    geoserverLayer: "geoint:geoint_rep
+    geoserverLayer: "geoint:geoint_reports",
   },
+};
+
+const ACCESS_LEVEL_LAYER_MAP = {
+  Group1: ["military_installations", "satellite_imagery_catalog", "geoint_reports"],
+  Group2: ["satellite_imagery_catalog"],
 };
 
 const state = {
@@ -63,6 +68,38 @@ async function fetchSession() {
   }
 
   return res.json();
+}
+
+function getCookie(name) {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = document.cookie.match(new RegExp(`(?:^|; )${escapedName}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function deriveSessionIdentity(session = {}) {
+  const cookieAccessLevel = getCookie("accessLevel");
+  const accessLevel = session.accessLevel || session.access_level || session.role || cookieAccessLevel || null;
+  const group = session.group || session.groupName || accessLevel || cookieAccessLevel || null;
+  const username =
+    session.username ||
+    session.user ||
+    session.userName ||
+    session.preferred_username ||
+    getCookie("username") ||
+    getCookie("user") ||
+    getCookie("preferred_username") ||
+    "Unknown";
+
+  const allowedLayers = Array.isArray(session.allowedLayers) && session.allowedLayers.length > 0
+    ? session.allowedLayers
+    : (accessLevel && ACCESS_LEVEL_LAYER_MAP[accessLevel]) || [];
+
+  return {
+    username,
+    group,
+    accessLevel,
+    allowedLayers,
+  };
 }
 
 function formatLayerName(name) {
@@ -290,15 +327,25 @@ function initMap() {
 }
 
 async function bootstrap() {
+  let session = {};
+  let sessionError = null;
+
   try {
-    const session = await fetchSession();
-    state.username = session.username || session.user || session.userName || "Unknown";
-    state.group = session.group || session.accessLevel || "Unknown";
-    state.accessLevel = session.accessLevel;
-    state.allowedLayers = Array.isArray(session.allowedLayers) ? session.allowedLayers : [];
+    session = await fetchSession();
+  } catch (err) {
+    sessionError = err;
+  }
+
+  try {
+    const derived = deriveSessionIdentity(session);
+    state.username = derived.username;
+    state.group = derived.group || "Unknown";
+    state.accessLevel = derived.accessLevel;
+    state.allowedLayers = derived.allowedLayers;
 
     if (state.allowedLayers.length === 0) {
-      throw new Error("No authorized layers available for this session.");
+      const sessionFailureDetail = sessionError ? ` Session lookup issue: ${sessionError.message}` : "";
+      throw new Error(`No authorized layers available for this session.${sessionFailureDetail}`);
     }
 
     updateUserIdentityUi();
@@ -308,10 +355,8 @@ async function bootstrap() {
     bindChatUi();
     addChatMessage("assistant", `Session established for ${state.username} (${state.group}).`);
   } catch (err) {
+    updateUserIdentityUi();
     accessScope.textContent = `Access denied: ${err.message}`;
-    if (userIdentity) {
-      userIdentity.textContent = "User: Unknown | Group: Unknown";
-    }
     chatScopeBadge.textContent = "Scope unavailable";
     addChatMessage("assistant", `Access denied: ${err.message}`);
   }
