@@ -39,6 +39,8 @@ const chatMessages = document.getElementById("chat-messages");
 const chatInput = document.getElementById("chat-input");
 const chatSend = document.getElementById("chat-send");
 const guardrailsToggle = document.getElementById("guardrails-toggle");
+const appShell = document.querySelector(".app-shell");
+const panelResizer = document.getElementById("panel-resizer");
 
 const overlay = new ol.Overlay({
   element: popupContainer,
@@ -286,6 +288,67 @@ function bindChatUi() {
   });
 }
 
+function setupPanelResizer() {
+  if (!appShell || !panelResizer) return;
+
+  const MIN_CHAT_PERCENT = 20;
+  const MAX_CHAT_PERCENT = 60;
+  const TOPBAR_HEIGHT_PX = 72;
+
+  let isDragging = false;
+
+  const applyChatHeight = (percent) => {
+    appShell.style.setProperty("--chat-height", `${percent.toFixed(1)}%`);
+    if (state.map) {
+      state.map.updateSize();
+    }
+  };
+
+  const updateFromPointer = (clientY) => {
+    const shellRect = appShell.getBoundingClientRect();
+    const resizerHeight = panelResizer.getBoundingClientRect().height || 10;
+    const availableHeight = shellRect.height - TOPBAR_HEIGHT_PX - resizerHeight;
+    if (availableHeight <= 0) return;
+
+    const pointerYWithinShell = clientY - shellRect.top;
+    let chatHeightPx = shellRect.height - pointerYWithinShell;
+
+    const minChatPx = (MIN_CHAT_PERCENT / 100) * availableHeight;
+    const maxChatPx = (MAX_CHAT_PERCENT / 100) * availableHeight;
+    chatHeightPx = Math.max(minChatPx, Math.min(maxChatPx, chatHeightPx));
+
+    const chatPercent = (chatHeightPx / availableHeight) * 100;
+    applyChatHeight(chatPercent);
+  };
+
+  const stopDragging = () => {
+    isDragging = false;
+    panelResizer.classList.remove("dragging");
+  };
+
+  panelResizer.addEventListener("pointerdown", (event) => {
+    isDragging = true;
+    panelResizer.classList.add("dragging");
+    panelResizer.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+
+  panelResizer.addEventListener("pointermove", (event) => {
+    if (!isDragging) return;
+    updateFromPointer(event.clientY);
+  });
+
+  panelResizer.addEventListener("pointerup", stopDragging);
+  panelResizer.addEventListener("pointercancel", stopDragging);
+  panelResizer.addEventListener("lostpointercapture", stopDragging);
+
+  window.addEventListener("resize", () => {
+    if (state.map) {
+      state.map.updateSize();
+    }
+  });
+}
+
 function initMap() {
   const baseLayer = new ol.layer.Tile({
     source: new ol.source.OSM(),
@@ -327,6 +390,8 @@ function initMap() {
 }
 
 async function bootstrap() {
+  setupPanelResizer();
+
   let session = {};
   let sessionError = null;
 

@@ -19,8 +19,9 @@ body {
 }
 
 .app-shell {
+  --chat-height: 35%;
   display: grid;
-  grid-template-rows: 72px 1fr 260px;
+  grid-template-rows: 72px minmax(0, 1fr) 10px var(--chat-height);
   height: 100vh;
 }
 
@@ -93,6 +94,31 @@ body {
   min-height: 0;
 }
 
+.panel-resizer {
+  background: rgba(255, 255, 255, 0.06);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: row-resize;
+  position: relative;
+  touch-action: none;
+}
+
+.panel-resizer::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 52px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(233, 69, 96, 0.7);
+}
+
+.panel-resizer.dragging {
+  background: rgba(233, 69, 96, 0.15);
+}
+
 .left-panel {
   background: var(--panel);
   padding: 16px;
@@ -147,6 +173,7 @@ body {
 
 .map-panel {
   position: relative;
+  min-height: 0;
 }
 
 .map {
@@ -161,6 +188,7 @@ body {
   grid-template-rows: auto 1fr auto auto;
   gap: 8px;
   padding: 10px 14px;
+  min-height: 0;
 }
 
 .chat-header {
@@ -277,10 +305,6 @@ body {
 }
 
 @media (max-width: 1100px) {
-  .app-shell {
-    grid-template-rows: 72px 1fr 320px;
-  }
-
   .content-grid {
     grid-template-columns: 1fr;
     grid-template-rows: 200px 1fr;
