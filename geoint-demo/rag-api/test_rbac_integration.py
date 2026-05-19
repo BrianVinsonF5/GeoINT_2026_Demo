@@ -31,12 +31,22 @@ class RbacIntegrationTests(unittest.TestCase):
         self._orig_embed_query_text = app_module.embed_query_text
         self._orig_query_vector_store = app_module.query_vector_store
         self._orig_query_gemini = app_module.query_gemini
+        self._orig_query_calypso = app_module.query_calypso
+        self._orig_calypso_client = app_module.calypso_client
+        self._orig_project_id = app_module.CALYPSOAI_PROJECT_ID
+        self._orig_project_id_group1 = app_module.CALYPSOAI_PROJECT_ID_GROUP1
+        self._orig_project_id_group2 = app_module.CALYPSOAI_PROJECT_ID_GROUP2
 
     def tearDown(self) -> None:
         app_module.request.urlopen = self._orig_urlopen
         app_module.embed_query_text = self._orig_embed_query_text
         app_module.query_vector_store = self._orig_query_vector_store
         app_module.query_gemini = self._orig_query_gemini
+        app_module.query_calypso = self._orig_query_calypso
+        app_module.calypso_client = self._orig_calypso_client
+        app_module.CALYPSOAI_PROJECT_ID = self._orig_project_id
+        app_module.CALYPSOAI_PROJECT_ID_GROUP1 = self._orig_project_id_group1
+        app_module.CALYPSOAI_PROJECT_ID_GROUP2 = self._orig_project_id_group2
 
     def test_group1_can_access_all_layers_via_wfs_proxy(self) -> None:
         def _fake_urlopen(_req, timeout=90):
@@ -122,6 +132,55 @@ class RbacIntegrationTests(unittest.TestCase):
 
         self.assertIn("only discuss Satellite Imagery Catalog", body.get("response", ""))
         self.assertEqual(body.get("sources", []), [])
+
+    def test_guardrails_routes_project_id_by_group(self) -> None:
+        captured = {"projects": []}
+
+        async def _fake_embed_query_text(_text):
+            return [0.12, 0.34, 0.56]
+
+        async def _fake_query_vector_store(_embedding, _k, where_filter=None):
+            return {
+                "documents": [["Satellite imagery record 2: Sensor Sentinel-2 with low cloud cover."]],
+                "metadatas": [[
+                    {
+                        "source_table": "satellite_imagery_catalog",
+                        "record_id": "2",
+                        "classification": "unclassified",
+                        "coordinates": "[10,20]",
+                    }
+                ]],
+            }
+
+        async def _fake_query_calypso(_prompt, project_id):
+            captured["projects"].append(project_id)
+            return f"guardrailed via {project_id}"
+
+        app_module.embedding_model = object()
+        app_module.chroma_collection = object()
+        app_module.embed_query_text = _fake_embed_query_text
+        app_module.query_vector_store = _fake_query_vector_store
+        app_module.query_calypso = _fake_query_calypso
+        app_module.calypso_client = object()
+        app_module.CALYPSOAI_PROJECT_ID = ""
+        app_module.CALYPSOAI_PROJECT_ID_GROUP1 = "project-group1"
+        app_module.CALYPSOAI_PROJECT_ID_GROUP2 = "project-group2"
+
+        res_group1 = self.client.post(
+            "/api/chat",
+            json={"message": "Summarize the imagery", "guardrails_enabled": True},
+            cookies={"accessLevel": "Group1"},
+        )
+        self.assertEqual(res_group1.status_code, 200)
+
+        res_group2 = self.client.post(
+            "/api/chat",
+            json={"message": "Summarize the imagery", "guardrails_enabled": True},
+            cookies={"accessLevel": "Group2"},
+        )
+        self.assertEqual(res_group2.status_code, 200)
+
+        self.assertEqual(captured["projects"], ["project-group1", "project-group2"])
 
 
 if __name__ == "__main__":

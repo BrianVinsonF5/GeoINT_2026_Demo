@@ -51,6 +51,8 @@ GEMINI_API_ENDPOINT = os.getenv(
 CALYPSOAI_URL = os.getenv("CALYPSOAI_URL", "https://www.us1.calypsoai.app").rstrip("/")
 CALYPSOAI_TOKEN = os.getenv("CALYPSOAI_TOKEN", "").strip()
 CALYPSOAI_PROJECT_ID = os.getenv("CALYPSOAI_PROJECT_ID", "").strip()
+CALYPSOAI_PROJECT_ID_GROUP1 = os.getenv("CALYPSOAI_PROJECT_ID_GROUP1", "").strip()
+CALYPSOAI_PROJECT_ID_GROUP2 = os.getenv("CALYPSOAI_PROJECT_ID_GROUP2", "").strip()
 GEOSERVER_INTERNAL_BASE_URL = os.getenv("GEOSERVER_INTERNAL_BASE_URL", "http://geoserver-service:8080/geoserver").rstrip("/")
 
 
@@ -131,6 +133,23 @@ def extract_requested_layers(query_params: Dict[str, str]) -> List[str]:
 def find_restricted_layers(access_level: Optional[str], requested_layers: List[str]) -> List[str]:
     allowed = set(ACCESS_LEVEL_LAYER_MAP.get(access_level or "", []))
     return [layer for layer in requested_layers if layer not in allowed]
+
+
+def resolve_calypso_project_id(access_level: Optional[str]) -> str:
+    per_group_map = {
+        "Group1": CALYPSOAI_PROJECT_ID_GROUP1,
+        "Group2": CALYPSOAI_PROJECT_ID_GROUP2,
+    }
+
+    if access_level:
+        project_id = per_group_map.get(access_level, "")
+        if project_id:
+            return project_id
+
+    if CALYPSOAI_PROJECT_ID:
+        return CALYPSOAI_PROJECT_ID
+
+    return ""
 
 
 def proxy_geoserver_get(upstream_url: str, raw_query: str) -> Response:
@@ -388,7 +407,22 @@ def invoke_gemini(prompt: str) -> str:
 
     try:
         with request.urlopen(req, timeout=90) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+            raw_body = response.read()
+            content_type = response.headers.get("Content-Type", "")
+
+            if not raw_body:
+                raise RuntimeError("Gemini API returned an empty response body")
+
+            decoded_body = raw_body.decode("utf-8", errors="replace")
+            try:
+                payload = json.loads(decoded_body)
+            except json.JSONDecodeError as exc:
+                body_preview = decoded_body[:300].replace("\n", " ").strip()
+                raise RuntimeError(
+                    "Gemini API returned a non-JSON response"
+                    f" (content-type: {content_type or 'unknown'})."
+                    f" Body preview: {body_preview}"
+                ) from exc
     except error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="ignore")
         raise RuntimeError(f"Gemini API request failed with HTTP {exc.code}: {body}") from exc
@@ -408,7 +442,10 @@ def init_calypso_client() -> None:
         calypso_client = None
         return
 
-    if not CALYPSOAI_TOKEN or not CALYPSOAI_PROJECT_ID:
+    has_any_project_id = bool(
+        CALYPSOAI_PROJECT_ID or CALYPSOAI_PROJECT_ID_GROUP1 or CALYPSOAI_PROJECT_ID_GROUP2
+    )
+    if not CALYPSOAI_TOKEN or not has_any_project_id:
         logger.warning("CalypsoAI credentials/project are not fully configured; guardrails mode will fail")
         calypso_client = None
         return
@@ -439,18 +476,18 @@ def _extract_calypso_text(prompt_result: Any) -> str:
     return "No response generated."
 
 
-def invoke_calypso(prompt: str) -> str:
+def invoke_calypso(prompt: str, project_id: str) -> str:
     if calypso_client is None:
         raise RuntimeError("CalypsoAI client is not configured")
-    if not CALYPSOAI_PROJECT_ID:
-        raise RuntimeError("CALYPSOAI_PROJECT_ID is not configured")
+    if not project_id:
+        raise RuntimeError("Calypso project ID is not configured for this access level")
 
-    result = calypso_client.prompts.send(prompt, project=CALYPSOAI_PROJECT_ID)
+    result = calypso_client.prompts.send(prompt, project=project_id)
     return _extract_calypso_text(result)
 
 
-async def query_calypso(prompt: str) -> str:
-    return await asyncio.to_thread(invoke_calypso, prompt)
+async def query_calypso(prompt: str, project_id: str) -> str:
+    return await asyncio.to_thread(invoke_calypso, prompt, project_id)
 
 
 async def embed_query_text(text: str) -> List[float]:
@@ -484,8 +521,11 @@ def startup_event() -> None:
 
 @app.get("/api/health")
 def health() -> Dict[str, str]:
+    has_any_project_id = bool(
+        CALYPSOAI_PROJECT_ID or CALYPSOAI_PROJECT_ID_GROUP1 or CALYPSOAI_PROJECT_ID_GROUP2
+    )
     ai_provider_ready = bool(GEMINI_API_KEY) or (
-        calypso_client is not None and bool(CALYPSOAI_PROJECT_ID)
+        calypso_client is not None and has_any_project_id
     )
     status = "ok" if chroma_collection is not None and embedding_model is not None and ai_provider_ready else "degraded"
     return {"status": status}
@@ -571,7 +611,10 @@ def geoserver_ows_proxy(
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest) -> ChatResponse:
+async def chat(
+    req: ChatRequest,
+    accessLevel: Optional[str] = Cookie(default=None),
+) -> ChatResponse:
     if chroma_collection is None or embedding_model is None:
         raise HTTPException(status_code=503, detail="RAG backend is not initialized")
 
@@ -590,7 +633,8 @@ async def chat(req: ChatRequest) -> ChatResponse:
 
     prompt = build_prompt(docs, req.message)
 
-    use_calypso = req.guardrails_enabled and calypso_client is not None and bool(CALYPSOAI_PROJECT_ID)
+    calypso_project_id = resolve_calypso_project_id(accessLevel)
+    use_calypso = req.guardrails_enabled and calypso_client is not None and bool(calypso_project_id)
     provider = "F5 AI Gateway Guardrails (CalypsoAI)" if use_calypso else "Google Gemini"
 
     if req.guardrails_enabled and not use_calypso:
@@ -598,7 +642,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
 
     try:
         if use_calypso:
-            model_response = await query_calypso(prompt)
+            model_response = await query_calypso(prompt, calypso_project_id)
         else:
             model_response = await query_gemini(prompt)
     except Exception as exc:

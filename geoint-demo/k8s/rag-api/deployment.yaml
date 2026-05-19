@@ -72,6 +72,16 @@ spec:
                 secretKeyRef:
                   name: calypsoai-secret
                   key: CALYPSOAI_PROJECT_ID
+            - name: CALYPSOAI_PROJECT_ID_GROUP1
+              valueFrom:
+                secretKeyRef:
+                  name: calypsoai-secret
+                  key: CALYPSOAI_PROJECT_ID_GROUP1
+            - name: CALYPSOAI_PROJECT_ID_GROUP2
+              valueFrom:
+                secretKeyRef:
+                  name: calypsoai-secret
+                  key: CALYPSOAI_PROJECT_ID_GROUP2
           readinessProbe:
             httpGet:
               path: /api/health

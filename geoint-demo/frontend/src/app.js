@@ -42,6 +42,51 @@ const guardrailsToggle = document.getElementById("guardrails-toggle");
 const appShell = document.querySelector(".app-shell");
 const panelResizer = document.getElementById("panel-resizer");
 
+function summarizeNonJsonResponse(text) {
+  const compact = String(text || "").replace(/\s+/g, " ").trim();
+  if (!compact) return "empty response";
+  return compact.length > 180 ? `${compact.slice(0, 180)}...` : compact;
+}
+
+async function readApiPayload(res) {
+  const rawText = await res.text();
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
+
+  if (!rawText) {
+    return {
+      data: {},
+      parseError: null,
+      rawText,
+      contentType,
+    };
+  }
+
+  if (contentType.includes("application/json") || contentType.includes("+json")) {
+    try {
+      return {
+        data: JSON.parse(rawText),
+        parseError: null,
+        rawText,
+        contentType,
+      };
+    } catch (err) {
+      return {
+        data: {},
+        parseError: err,
+        rawText,
+        contentType,
+      };
+    }
+  }
+
+  return {
+    data: {},
+    parseError: null,
+    rawText,
+    contentType,
+  };
+}
+
 const overlay = new ol.Overlay({
   element: popupContainer,
   autoPan: {
@@ -64,12 +109,23 @@ async function fetchSession() {
     headers: { Accept: "application/json" },
   });
 
+  const payload = await readApiPayload(res);
+
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || body.message || `Session request failed (${res.status})`);
+    const message =
+      payload.data.detail ||
+      payload.data.message ||
+      (payload.parseError
+        ? `Session service returned invalid JSON (${res.status})`
+        : `Session request failed (${res.status})`);
+    throw new Error(message);
   }
 
-  return res.json();
+  if (payload.parseError) {
+    throw new Error("Session service returned malformed JSON");
+  }
+
+  return payload.data;
 }
 
 function getCookie(name) {
@@ -205,7 +261,8 @@ async function fetchNearestFeature(layerName, lon, lat) {
     return null;
   }
 
-  const data = await res.json().catch(() => null);
+  const payload = await readApiPayload(res);
+  const data = payload.parseError ? null : payload.data;
   if (!data || !Array.isArray(data.features) || data.features.length === 0) {
     return null;
   }
@@ -252,9 +309,29 @@ async function sendChat() {
       }),
     });
 
-    const body = await res.json().catch(() => ({}));
+    const payload = await readApiPayload(res);
+    const body = payload.parseError ? {} : payload.data;
+
     if (!res.ok) {
-      throw new Error(body.detail || `Chat request failed (${res.status})`);
+      if (body.detail || body.message) {
+        throw new Error(body.detail || body.message);
+      }
+
+      if (payload.parseError) {
+        throw new Error(`AI service returned invalid JSON (${res.status})`);
+      }
+
+      if (payload.rawText) {
+        throw new Error(
+          `Chat request failed (${res.status}): ${summarizeNonJsonResponse(payload.rawText)}`
+        );
+      }
+
+      throw new Error(`Chat request failed (${res.status})`);
+    }
+
+    if (payload.parseError) {
+      throw new Error("AI service returned malformed JSON");
     }
 
     addChatMessage("assistant", body.response || "No response generated.");
