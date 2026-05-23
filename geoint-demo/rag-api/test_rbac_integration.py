@@ -33,6 +33,9 @@ class RbacIntegrationTests(unittest.TestCase):
         self._orig_query_gemini = app_module.query_gemini
         self._orig_query_calypso = app_module.query_calypso
         self._orig_calypso_client = app_module.calypso_client
+        self._orig_token = app_module.CALYPSOAI_TOKEN
+        self._orig_token_group1 = app_module.CALYPSOAI_TOKEN_GROUP1
+        self._orig_token_group2 = app_module.CALYPSOAI_TOKEN_GROUP2
         self._orig_project_id = app_module.CALYPSOAI_PROJECT_ID
         self._orig_project_id_group1 = app_module.CALYPSOAI_PROJECT_ID_GROUP1
         self._orig_project_id_group2 = app_module.CALYPSOAI_PROJECT_ID_GROUP2
@@ -44,6 +47,9 @@ class RbacIntegrationTests(unittest.TestCase):
         app_module.query_gemini = self._orig_query_gemini
         app_module.query_calypso = self._orig_query_calypso
         app_module.calypso_client = self._orig_calypso_client
+        app_module.CALYPSOAI_TOKEN = self._orig_token
+        app_module.CALYPSOAI_TOKEN_GROUP1 = self._orig_token_group1
+        app_module.CALYPSOAI_TOKEN_GROUP2 = self._orig_token_group2
         app_module.CALYPSOAI_PROJECT_ID = self._orig_project_id
         app_module.CALYPSOAI_PROJECT_ID_GROUP1 = self._orig_project_id_group1
         app_module.CALYPSOAI_PROJECT_ID_GROUP2 = self._orig_project_id_group2
@@ -134,7 +140,7 @@ class RbacIntegrationTests(unittest.TestCase):
         self.assertEqual(body.get("sources", []), [])
 
     def test_guardrails_routes_project_id_by_group(self) -> None:
-        captured = {"projects": []}
+        captured = {"credentials": []}
 
         async def _fake_embed_query_text(_text):
             return [0.12, 0.34, 0.56]
@@ -152,8 +158,8 @@ class RbacIntegrationTests(unittest.TestCase):
                 ]],
             }
 
-        async def _fake_query_calypso(_prompt, project_id):
-            captured["projects"].append(project_id)
+        async def _fake_query_calypso(_prompt, token, project_id):
+            captured["credentials"].append((token, project_id))
             return f"guardrailed via {project_id}"
 
         app_module.embedding_model = object()
@@ -162,6 +168,9 @@ class RbacIntegrationTests(unittest.TestCase):
         app_module.query_vector_store = _fake_query_vector_store
         app_module.query_calypso = _fake_query_calypso
         app_module.calypso_client = object()
+        app_module.CALYPSOAI_TOKEN = ""
+        app_module.CALYPSOAI_TOKEN_GROUP1 = "token-group1"
+        app_module.CALYPSOAI_TOKEN_GROUP2 = "token-group2"
         app_module.CALYPSOAI_PROJECT_ID = ""
         app_module.CALYPSOAI_PROJECT_ID_GROUP1 = "project-group1"
         app_module.CALYPSOAI_PROJECT_ID_GROUP2 = "project-group2"
@@ -180,7 +189,10 @@ class RbacIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(res_group2.status_code, 200)
 
-        self.assertEqual(captured["projects"], ["project-group1", "project-group2"])
+        self.assertEqual(
+            captured["credentials"],
+            [("token-group1", "project-group1"), ("token-group2", "project-group2")],
+        )
 
 
 if __name__ == "__main__":

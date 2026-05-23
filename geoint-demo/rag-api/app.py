@@ -50,6 +50,8 @@ GEMINI_API_ENDPOINT = os.getenv(
 
 CALYPSOAI_URL = os.getenv("CALYPSOAI_URL", "https://www.us1.calypsoai.app").rstrip("/")
 CALYPSOAI_TOKEN = os.getenv("CALYPSOAI_TOKEN", "").strip()
+CALYPSOAI_TOKEN_GROUP1 = os.getenv("CALYPSOAI_TOKEN_GROUP1", "").strip()
+CALYPSOAI_TOKEN_GROUP2 = os.getenv("CALYPSOAI_TOKEN_GROUP2", "").strip()
 CALYPSOAI_PROJECT_ID = os.getenv("CALYPSOAI_PROJECT_ID", "").strip()
 CALYPSOAI_PROJECT_ID_GROUP1 = os.getenv("CALYPSOAI_PROJECT_ID_GROUP1", "").strip()
 CALYPSOAI_PROJECT_ID_GROUP2 = os.getenv("CALYPSOAI_PROJECT_ID_GROUP2", "").strip()
@@ -135,21 +137,21 @@ def find_restricted_layers(access_level: Optional[str], requested_layers: List[s
     return [layer for layer in requested_layers if layer not in allowed]
 
 
-def resolve_calypso_project_id(access_level: Optional[str]) -> str:
+def resolve_calypso_credentials(access_level: Optional[str]) -> Tuple[str, str]:
     per_group_map = {
-        "Group1": CALYPSOAI_PROJECT_ID_GROUP1,
-        "Group2": CALYPSOAI_PROJECT_ID_GROUP2,
+        "Group1": (CALYPSOAI_TOKEN_GROUP1, CALYPSOAI_PROJECT_ID_GROUP1),
+        "Group2": (CALYPSOAI_TOKEN_GROUP2, CALYPSOAI_PROJECT_ID_GROUP2),
     }
 
     if access_level:
-        project_id = per_group_map.get(access_level, "")
-        if project_id:
-            return project_id
+        token, project_id = per_group_map.get(access_level, ("", ""))
+        if token and project_id:
+            return token, project_id
 
-    if CALYPSOAI_PROJECT_ID:
-        return CALYPSOAI_PROJECT_ID
+    if CALYPSOAI_TOKEN and CALYPSOAI_PROJECT_ID:
+        return CALYPSOAI_TOKEN, CALYPSOAI_PROJECT_ID
 
-    return ""
+    return "", ""
 
 
 def proxy_geoserver_get(upstream_url: str, raw_query: str) -> Response:
@@ -442,15 +444,17 @@ def init_calypso_client() -> None:
         calypso_client = None
         return
 
-    has_any_project_id = bool(
-        CALYPSOAI_PROJECT_ID or CALYPSOAI_PROJECT_ID_GROUP1 or CALYPSOAI_PROJECT_ID_GROUP2
-    )
-    if not CALYPSOAI_TOKEN or not has_any_project_id:
+    has_default_credentials = bool(CALYPSOAI_TOKEN and CALYPSOAI_PROJECT_ID)
+    has_group1_credentials = bool(CALYPSOAI_TOKEN_GROUP1 and CALYPSOAI_PROJECT_ID_GROUP1)
+    has_group2_credentials = bool(CALYPSOAI_TOKEN_GROUP2 and CALYPSOAI_PROJECT_ID_GROUP2)
+    if not (has_default_credentials or has_group1_credentials or has_group2_credentials):
         logger.warning("CalypsoAI credentials/project are not fully configured; guardrails mode will fail")
         calypso_client = None
         return
 
-    calypso_client = CalypsoAI(url=CALYPSOAI_URL, token=CALYPSOAI_TOKEN)
+    # Mark guardrails provider as configured. A per-request client is created using
+    # the token resolved for the caller's access level.
+    calypso_client = object()
     logger.info("Configured CalypsoAI guardrails endpoint: %s", CALYPSOAI_URL)
 
 
@@ -476,18 +480,21 @@ def _extract_calypso_text(prompt_result: Any) -> str:
     return "No response generated."
 
 
-def invoke_calypso(prompt: str, project_id: str) -> str:
-    if calypso_client is None:
+def invoke_calypso(prompt: str, token: str, project_id: str) -> str:
+    if calypso_client is None or CalypsoAI is None:
         raise RuntimeError("CalypsoAI client is not configured")
+    if not token:
+        raise RuntimeError("Calypso token is not configured for this access level")
     if not project_id:
         raise RuntimeError("Calypso project ID is not configured for this access level")
 
-    result = calypso_client.prompts.send(prompt, project=project_id)
+    scoped_client = CalypsoAI(url=CALYPSOAI_URL, token=token)
+    result = scoped_client.prompts.send(prompt, project=project_id)
     return _extract_calypso_text(result)
 
 
-async def query_calypso(prompt: str, project_id: str) -> str:
-    return await asyncio.to_thread(invoke_calypso, prompt, project_id)
+async def query_calypso(prompt: str, token: str, project_id: str) -> str:
+    return await asyncio.to_thread(invoke_calypso, prompt, token, project_id)
 
 
 async def embed_query_text(text: str) -> List[float]:
@@ -521,11 +528,12 @@ def startup_event() -> None:
 
 @app.get("/api/health")
 def health() -> Dict[str, str]:
-    has_any_project_id = bool(
-        CALYPSOAI_PROJECT_ID or CALYPSOAI_PROJECT_ID_GROUP1 or CALYPSOAI_PROJECT_ID_GROUP2
-    )
+    has_default_credentials = bool(CALYPSOAI_TOKEN and CALYPSOAI_PROJECT_ID)
+    has_group1_credentials = bool(CALYPSOAI_TOKEN_GROUP1 and CALYPSOAI_PROJECT_ID_GROUP1)
+    has_group2_credentials = bool(CALYPSOAI_TOKEN_GROUP2 and CALYPSOAI_PROJECT_ID_GROUP2)
+    has_any_credentials = has_default_credentials or has_group1_credentials or has_group2_credentials
     ai_provider_ready = bool(GEMINI_API_KEY) or (
-        calypso_client is not None and has_any_project_id
+        calypso_client is not None and has_any_credentials
     )
     status = "ok" if chroma_collection is not None and embedding_model is not None and ai_provider_ready else "degraded"
     return {"status": status}
@@ -633,8 +641,8 @@ async def chat(
 
     prompt = build_prompt(docs, req.message)
 
-    calypso_project_id = resolve_calypso_project_id(accessLevel)
-    use_calypso = req.guardrails_enabled and calypso_client is not None and bool(calypso_project_id)
+    calypso_token, calypso_project_id = resolve_calypso_credentials(accessLevel)
+    use_calypso = req.guardrails_enabled and bool(calypso_token) and bool(calypso_project_id)
     provider = "F5 AI Gateway Guardrails (CalypsoAI)" if use_calypso else "Google Gemini"
 
     if req.guardrails_enabled and not use_calypso:
@@ -642,7 +650,7 @@ async def chat(
 
     try:
         if use_calypso:
-            model_response = await query_calypso(prompt, calypso_project_id)
+            model_response = await query_calypso(prompt, calypso_token, calypso_project_id)
         else:
             model_response = await query_gemini(prompt)
     except Exception as exc:

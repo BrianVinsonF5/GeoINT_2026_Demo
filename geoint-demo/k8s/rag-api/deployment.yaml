@@ -67,6 +67,16 @@ spec:
                 secretKeyRef:
                   name: calypsoai-secret
                   key: CALYPSOAI_TOKEN
+            - name: CALYPSOAI_TOKEN_GROUP1
+              valueFrom:
+                secretKeyRef:
+                  name: calypsoai-secret
+                  key: CALYPSOAI_TOKEN_GROUP1
+            - name: CALYPSOAI_TOKEN_GROUP2
+              valueFrom:
+                secretKeyRef:
+                  name: calypsoai-secret
+                  key: CALYPSOAI_TOKEN_GROUP2
             - name: CALYPSOAI_PROJECT_ID
               valueFrom:
                 secretKeyRef:
