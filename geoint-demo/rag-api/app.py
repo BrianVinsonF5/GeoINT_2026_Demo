@@ -459,21 +459,74 @@ def init_calypso_client() -> None:
 
 
 def _extract_calypso_text(prompt_result: Any) -> str:
+    def _clean_text(value: Any) -> str:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return ""
+
+    def _extract_from_dict(data: Dict[str, Any]) -> str:
+        # Prefer explicit provider response text.
+        result = data.get("result") if isinstance(data.get("result"), dict) else {}
+        text = _clean_text(result.get("response"))
+        if text:
+            return text
+
+        # If guardrails returned a blocked outcome, still surface the provider message.
+        outcome = data.get("outcome") or result.get("outcome")
+        if outcome == "blocked":
+            for key in ("response", "message", "detail"):
+                text = _clean_text(data.get(key))
+                if text:
+                    return text
+            for key in ("response", "message", "detail"):
+                text = _clean_text(result.get(key))
+                if text:
+                    return text
+
+        # Fallbacks for SDK shape differences.
+        for key in ("response", "message", "detail"):
+            text = _clean_text(data.get(key))
+            if text:
+                return text
+
+        return ""
+
     try:
         result = getattr(prompt_result, "result", None)
         if result is not None:
             response_text = getattr(result, "response", None)
-            if isinstance(response_text, str) and response_text.strip():
-                return response_text.strip()
+            text = _clean_text(response_text)
+            if text:
+                return text
+
+            # Handle blocked outcomes where custom text may be on result/message fields.
+            outcome = getattr(prompt_result, "outcome", None) or getattr(result, "outcome", None)
+            if outcome == "blocked":
+                for key in ("response", "message", "detail"):
+                    text = _clean_text(getattr(prompt_result, key, None))
+                    if text:
+                        return text
+                for key in ("response", "message", "detail"):
+                    text = _clean_text(getattr(result, key, None))
+                    if text:
+                        return text
     except Exception:
         pass
 
     try:
         dumped = prompt_result.model_dump()
-        result = dumped.get("result", {}) if isinstance(dumped, dict) else {}
-        response_text = result.get("response") if isinstance(result, dict) else None
-        if isinstance(response_text, str) and response_text.strip():
-            return response_text.strip()
+        if isinstance(dumped, dict):
+            text = _extract_from_dict(dumped)
+            if text:
+                return text
+    except Exception:
+        pass
+
+    try:
+        if isinstance(prompt_result, dict):
+            text = _extract_from_dict(prompt_result)
+            if text:
+                return text
     except Exception:
         pass
 
