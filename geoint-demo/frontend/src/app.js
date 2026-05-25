@@ -287,7 +287,7 @@ function addChatMessage(role, text, blocked = false) {
   if (blocked) {
     const header = document.createElement("div");
     header.className = "msg-blocked-header";
-    header.textContent = "F5 AI Gaurdrails — Request Blocked";
+    header.textContent = "F5 AI Gaurdrails: Request Blocked";
     node.appendChild(header);
   }
 
