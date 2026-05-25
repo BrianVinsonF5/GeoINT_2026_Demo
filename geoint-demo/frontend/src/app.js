@@ -280,10 +280,21 @@ function getTopVisibleAllowedLayerName() {
   return null;
 }
 
-function addChatMessage(role, text) {
+function addChatMessage(role, text, blocked = false) {
   const node = document.createElement("div");
-  node.className = `msg ${role}`;
-  node.textContent = text;
+  node.className = blocked ? "msg blocked" : `msg ${role}`;
+
+  if (blocked) {
+    const header = document.createElement("div");
+    header.className = "msg-blocked-header";
+    header.textContent = "⚠ AI Gateway — Request Blocked";
+    node.appendChild(header);
+  }
+
+  const body = document.createElement("div");
+  body.textContent = text;
+  node.appendChild(body);
+
   chatMessages.appendChild(node);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
@@ -334,7 +345,7 @@ async function sendChat() {
       throw new Error("AI service returned malformed JSON");
     }
 
-    addChatMessage("assistant", body.response || "No response generated.");
+    addChatMessage("assistant", body.response || "No response generated.", body.blocked === true);
   } catch (err) {
     addChatMessage("assistant", `Error: ${err.message}`);
   }
