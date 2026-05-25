@@ -69,6 +69,7 @@ class ChatResponse(BaseModel):
     response: str
     sources: List[Dict[str, Any]]
     coordinates: List[List[float]]
+    blocked: bool = False
 
 
 app = FastAPI(title="GEOINT RAG API", version="1.0.0")
@@ -458,82 +459,95 @@ def init_calypso_client() -> None:
     logger.info("Configured CalypsoAI guardrails endpoint: %s", CALYPSOAI_URL)
 
 
-def _extract_calypso_text(prompt_result: Any) -> str:
+def _extract_calypso_text(prompt_result: Any) -> Tuple[str, bool]:
+    """Return (response_text, is_blocked). is_blocked is True when the AI Gateway blocked the request."""
+
     def _clean_text(value: Any) -> str:
         if isinstance(value, str) and value.strip():
             return value.strip()
         return ""
 
-    def _extract_from_dict(data: Dict[str, Any]) -> str:
-        # Prefer explicit provider response text.
-        result = data.get("result") if isinstance(data.get("result"), dict) else {}
-        text = _clean_text(result.get("response"))
-        if text:
-            return text
+    def _is_blocked_outcome(outcome: Any) -> bool:
+        return isinstance(outcome, str) and outcome.lower() == "blocked"
 
-        # If guardrails returned a blocked outcome, still surface the provider message.
-        outcome = data.get("outcome") or result.get("outcome")
-        if outcome == "blocked":
-            for key in ("response", "message", "detail"):
+    def _extract_from_dict(data: Dict[str, Any]) -> Tuple[str, bool]:
+        result = data.get("result") if isinstance(data.get("result"), dict) else {}
+        outcome = data.get("outcome") or (result.get("outcome") if isinstance(result, dict) else None)
+        blocked = _is_blocked_outcome(outcome)
+
+        if blocked:
+            # block_message is the CalypsoAI-configured policy violation message.
+            for key in ("block_message", "response", "message", "detail"):
                 text = _clean_text(data.get(key))
                 if text:
-                    return text
-            for key in ("response", "message", "detail"):
-                text = _clean_text(result.get(key))
-                if text:
-                    return text
+                    return text, True
+            if isinstance(result, dict):
+                for key in ("block_message", "response", "message", "detail"):
+                    text = _clean_text(result.get(key))
+                    if text:
+                        return text, True
+            return "This request was blocked by the AI Gateway policy.", True
 
-        # Fallbacks for SDK shape differences.
+        # Prefer explicit provider response text.
+        text = _clean_text(result.get("response") if isinstance(result, dict) else None)
+        if text:
+            return text, False
+
         for key in ("response", "message", "detail"):
             text = _clean_text(data.get(key))
             if text:
-                return text
+                return text, False
 
-        return ""
+        return "", False
 
     try:
         result = getattr(prompt_result, "result", None)
+        outcome = getattr(prompt_result, "outcome", None) or (
+            getattr(result, "outcome", None) if result is not None else None
+        )
+        blocked = _is_blocked_outcome(outcome)
+
+        if blocked:
+            for key in ("block_message", "response", "message", "detail"):
+                text = _clean_text(getattr(prompt_result, key, None))
+                if text:
+                    return text, True
+            if result is not None:
+                for key in ("block_message", "response", "message", "detail"):
+                    text = _clean_text(getattr(result, key, None))
+                    if text:
+                        return text, True
+            return "This request was blocked by the AI Gateway policy.", True
+
         if result is not None:
             response_text = getattr(result, "response", None)
             text = _clean_text(response_text)
             if text:
-                return text
-
-            # Handle blocked outcomes where custom text may be on result/message fields.
-            outcome = getattr(prompt_result, "outcome", None) or getattr(result, "outcome", None)
-            if outcome == "blocked":
-                for key in ("response", "message", "detail"):
-                    text = _clean_text(getattr(prompt_result, key, None))
-                    if text:
-                        return text
-                for key in ("response", "message", "detail"):
-                    text = _clean_text(getattr(result, key, None))
-                    if text:
-                        return text
+                return text, False
     except Exception:
         pass
 
     try:
         dumped = prompt_result.model_dump()
         if isinstance(dumped, dict):
-            text = _extract_from_dict(dumped)
+            text, blocked = _extract_from_dict(dumped)
             if text:
-                return text
+                return text, blocked
     except Exception:
         pass
 
     try:
         if isinstance(prompt_result, dict):
-            text = _extract_from_dict(prompt_result)
+            text, blocked = _extract_from_dict(prompt_result)
             if text:
-                return text
+                return text, blocked
     except Exception:
         pass
 
-    return "No response generated."
+    return "No response generated.", False
 
 
-def invoke_calypso(prompt: str, token: str, project_id: str) -> str:
+def invoke_calypso(prompt: str, token: str, project_id: str) -> Tuple[str, bool]:
     if calypso_client is None or CalypsoAI is None:
         raise RuntimeError("CalypsoAI client is not configured")
     if not token:
@@ -546,7 +560,7 @@ def invoke_calypso(prompt: str, token: str, project_id: str) -> str:
     return _extract_calypso_text(result)
 
 
-async def query_calypso(prompt: str, token: str, project_id: str) -> str:
+async def query_calypso(prompt: str, token: str, project_id: str) -> Tuple[str, bool]:
     return await asyncio.to_thread(invoke_calypso, prompt, token, project_id)
 
 
@@ -701,9 +715,12 @@ async def chat(
     if req.guardrails_enabled and not use_calypso:
         logger.warning("Guardrails requested but CalypsoAI is not configured; falling back to Gemini")
 
+    response_blocked = False
     try:
         if use_calypso:
-            model_response = await query_calypso(prompt, calypso_token, calypso_project_id)
+            model_response, response_blocked = await query_calypso(prompt, calypso_token, calypso_project_id)
+            if response_blocked:
+                logger.info("CalypsoAI blocked the response: %s", model_response[:200])
         else:
             model_response = await query_gemini(prompt)
     except Exception as exc:
@@ -722,4 +739,4 @@ async def chat(
 
     coords = extract_coordinates_from_metadata(metadatas)
 
-    return ChatResponse(response=model_response, sources=sources, coordinates=coords)
+    return ChatResponse(response=model_response, sources=sources, coordinates=coords, blocked=response_blocked)

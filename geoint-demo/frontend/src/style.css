@@ -235,6 +235,22 @@ body {
   border: 1px solid rgba(233, 69, 96, 0.35);
 }
 
+.msg.blocked {
+  margin-right: auto;
+  background: rgba(200, 80, 0, 0.15);
+  border: 1px solid rgba(255, 140, 0, 0.6);
+  color: #ffc06a;
+}
+
+.msg-blocked-header {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #ff9a2e;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+}
+
 .chips {
   display: flex;
   gap: 8px;
